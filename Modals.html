@@ -1,108 +1,87 @@
-<div class="modal fade" id="settings-modal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="settingsModalLabel"><i class="bi bi-gear-fill me-2"></i>ตั้งค่าข้อมูลเอกสาร</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="settings-form">
-                    <div class="mb-3"><label class="form-label">ชื่อบริษัท</label><input type="text" id="setting-companyName" class="form-control"></div>
-                    <div class="mb-3"><label class="form-label">ที่อยู่ 1</label><input type="text" id="setting-address1" class="form-control"></div>
-                    <div class="mb-3"><label class="form-label">ที่อยู่ 2</label><input type="text" id="setting-address2" class="form-control"></div>
-                    <div class="mb-3"><label class="form-label">ข้อมูลติดต่อ</label><input type="text" id="setting-contactInfo" class="form-control"></div>
-                </form>
-            </div>
-            <div class="modal-footer d-flex justify-content-between">
-                <button type="button" class="btn btn-outline-danger btn-sm" onclick="handleClearCache()"><i class="bi bi-eraser-fill"></i> ล้างแคช</button>
-                <div>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">ยกเลิก</button>
-                    <button type="submit" class="btn btn-primary" form="settings-form">บันทึก</button>
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
+    <?!= include('Style'); ?>
+</head>
+<body>
+<div class="main-container">
+    <main class="tab-content-area mt-4">
+
+        <div id="stock-section" class="tab-content">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">ภาพรวมคลังสินค้า</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover mb-0">
+                            <thead id="stockTableHead"></thead>
+                            <tbody id="stockTableBody"></tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-</div>
 
-<div class="modal fade" id="sales-form-modal" tabindex="-1" aria-labelledby="salesFormModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="salesFormModalLabel">สร้างเอกสารขาย</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" onclick="resetSalesForm()"></button>
+        <div id="sales-section" class="tab-content">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">ประวัติการขาย</h5>
+                </div>
+                <div class="card-body p-0"><div class="table-responsive"><table class="table table-striped table-hover mb-0"><thead><tr><th>เลขที่เอกสาร</th><th>วันที่</th><th>ลูกค้า</th><th>พนักงานขาย</th><th>รายการ</th><th class="text-end">ยอดรวม</th><th class="text-end">จัดการ</th></tr></thead><tbody id="salesHistoryTableBody"></tbody></table></div></div>
+                <div class="card-footer bg-white"><nav><ul class="pagination justify-content-center" id="sales-pagination"></ul></nav></div>
             </div>
-            <div class="modal-body">
-                <form id="salesForm">
-                  <input type="hidden" id="salesFormDocId">
-                    <div class="row mb-3">
-                        <div class="col-md-6"><label class="form-label">ชื่อลูกค้า</label><input type="text" id="salesCustomerName" class="form-control" list="customer-options" required oninput="handleCustomerSelect(this.value)"></div>
-                        <div class="col-md-6"><label class="form-label">เบอร์ติดต่อ</label><input type="text" id="salesCustomerTel" class="form-control" readonly></div>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-md-6"><label class="form-label">พนักงานขาย</label><select class="form-select" id="salesperson" required><option value="" selected disabled>-- เลือกพนักงานขาย --</option></select></div>
-                    </div>
-                    <h5>รายการสินค้า</h5>
-                    <table class="table table-sm align-middle">
-                        <thead>
-                          <tr>
-                            <th>ชื่อสินค้า</th>
-                            <th>จำนวน</th>
-                            <th class="unit-select">หน่วย</th>
-                            <th>ราคา/หน่วยย่อย</th>
-                            <th>ราคารวม</th>
-                            <th></th>
-                            </tr></thead>
-                        <tbody id="salesItemTableBody"></tbody>
-                    </table>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="addSalesItemRow()">+ เพิ่มรายการ</button>
-                    <hr>
-                    <div class="row justify-content-end">
-                        <div class="col-md-6 col-lg-5">
-                            <table class="table table-borderless table-sm">
-                                <tbody>
-                                    <tr><td><h5>ยอดรวม:</h5></td><td class="text-end"><h5 id="subtotal">฿ 0.00</h5></td></tr>
-                                    <tr>
-                                        <td><h5>ส่วนลด (บาท):</h5></td>
-                                        <td class="text-end" style="width: 150px;">
-                                            <input type="text" class="form-control text-end" id="discount" value="0.00" oninput="calculateTotals()">
-                                        </td>
-                                    </tr>
-                                    <tr class="border-top border-2"><td><h4>ยอดรวมสุทธิ:</h4></td><td class="text-end"><h4 class="text-success" id="grandTotal">฿ 0.00</h4></td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </form>
+        </div>
+
+<div id="customers-section" class="tab-content">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">รายชื่อลูกค้า</h5>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" onclick="resetSalesForm()">ยกเลิก</button>
-                <button type="submit" form="salesForm" id="sales-submit-btn" class="btn btn-primary">บันทึกการขาย</button>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>ชื่อลูกค้า</th>
+                            <th>เบอร์ติดต่อ</th>
+                            <th class="text-end">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customerTableBody"></tbody>
+                </table>
             </div>
+        </div>
+        <div class="card-footer bg-white">
+            <nav>
+                <ul class="pagination justify-content-center" id="customer-pagination"></ul>
+            </nav>
         </div>
     </div>
 </div>
-
-<div class="modal fade" id="customer-form-modal" tabindex="-1" aria-labelledby="customerModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="customer-modal-title">เพิ่มข้อมูลลูกค้าใหม่</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="customerForm">
-                    <input type="hidden" id="customerId">
-                    <div class="row g-3">
-                        <div class="col-md-6"><label class="form-label">ชื่อลูกค้า</label><input type="text" id="customerName" class="form-control" required></div>
-                        <div class="col-md-6"><label class="form-label">เบอร์ติดต่อ</label><input type="tel" id="customerTel" class="form-control"></div>
-                        <div class="col-12"><label class="form-label">ที่อยู่</label><textarea id="customerAddress" class="form-control" rows="3"></textarea></div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal">ยกเลิก</button>
-                <button type="submit" id="customer-submit-btn" class="btn btn-primary" form="customerForm"><i class="bi bi-save"></i> บันทึกข้อมูล</button>
-            </div>
-        </div>
-    </div>
+        
+    </main>
 </div>
+
+    <datalist id="product-options"></datalist>
+    <datalist id="customer-options"></datalist>
+    <div id="toast-container"></div>
+    <div id="loading-overlay" style="display: none;"><div class="egg-loader"><div class="egg"></div></div></div>
+
+    <?!= include('Modals'); ?>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      const initialPage = <?= initialPage || '"stock"' ?>;
+      const dashboardUrl = <?= dashboardUrl || '""' ?>;
+    </script>
+    <?!= include('JavaScript'); ?>
+</body>
+</html>
