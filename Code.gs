@@ -27,8 +27,9 @@ function doGet(e) {
         .setTitle("ระบบขายและจัดการลูกค้า")
         .setSandboxMode(HtmlService.SandboxMode.IFRAME);
     } else {
-      return HtmlService.createTemplateFromFile('Dashboard')
-        .evaluate()
+      const template = HtmlService.createTemplateFromFile('Dashboard');
+      template.metrics = getDashboardMetrics(); // ✨ ส่งข้อมูล metrics ไปที่หน้า Dashboard
+      return template.evaluate()
         .setTitle("Dashboard | ระบบขาย")
         .setSandboxMode(HtmlService.SandboxMode.IFRAME);
     }
@@ -646,4 +647,67 @@ function clearServerCache() {
     CacheService.getScriptCache().removeAll(['productList', 'employeeList']);
     return { success: true, message: 'ล้างแคชฝั่งเซิร์ฟเวอร์สำเร็จ' };
   } catch (e) { console.error("clearServerCache Error: " + e.message); return { success: false, message: e.message }; }
+}
+
+const ssCache = {};
+
+function getSpreadsheet_(ssId) {
+  if (!ssCache[ssId]) {
+    ssCache[ssId] = SpreadsheetApp.openById(ssId);
+  }
+  return ssCache[ssId];
+}
+
+// เวลาใช้งาน
+const stockSs = getSpreadsheet_(CONFIG.stockSheetId);
+
+/**
+ * [NEW] ดึงข้อมูลสรุปยอดบิลสำหรับหน้า Dashboard
+ * @returns {object} ออบเจ็กต์ที่ประกอบด้วยยอดบิล วันนี้, เดือนนี้, และทั้งหมด
+ */
+function getDashboardMetrics() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const salesSheet = ss.getSheetByName(CONFIG.salesSheetName);
+    if (!salesSheet || salesSheet.getLastRow() < 2) {
+      return { today: 0, month: 0, total: 0 };
+    }
+
+    // ดึงข้อมูลแค่คอลัมน์ A (เลขที่เอกสาร) และ B (วันที่ขาย) เพื่อประสิทธิภาพ
+    const data = salesSheet.getRange(2, 1, salesSheet.getLastRow() - 1, 2).getValues();
+    const uniqueDocs = new Set();
+    let todayCount = 0;
+    let monthCount = 0;
+
+    const now = new Date();
+    const today = now.getDate();
+    const thisMonth = now.getMonth();
+    const thisYear = now.getFullYear();
+
+    data.forEach(row => {
+      const docId = row[0];
+      if (docId) { // ประมวลผลเฉพาะแถวแรกของบิลที่มีเลขที่เอกสาร
+        uniqueDocs.add(docId);
+        const saleDate = new Date(row[1]);
+        
+        // ตรวจสอบว่าเป็นบิลของวันนี้หรือไม่
+        if (saleDate.getDate() === today && saleDate.getMonth() === thisMonth && saleDate.getFullYear() === thisYear) {
+          todayCount++;
+        }
+        // ตรวจสอบว่าเป็นบิลของเดือนนี้หรือไม่
+        if (saleDate.getMonth() === thisMonth && saleDate.getFullYear() === thisYear) {
+          monthCount++;
+        }
+      }
+    });
+
+    return {
+      today: todayCount,
+      month: monthCount,
+      total: uniqueDocs.size
+    };
+  } catch (e) {
+    console.error("getDashboardMetrics Error: " + e.message);
+    return { today: 0, month: 0, total: 0, error: e.message };
+  }
 }
