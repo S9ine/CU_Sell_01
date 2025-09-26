@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Sarabun', sans-serif; background-color: #f4f7f6; }
+        .main-container { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+        .feature-card {
+            background-color: white; border-radius: 1rem; border: 1px solid #e9ecef;
+            padding: 1.5rem; text-align: center; transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.04);
+        }
+        .feature-card:hover { transform: translateY(-5px); box-shadow: 0 12px 16px rgba(0,0,0,0.08); }
+        .feature-card .icon-circle {
+            width: 60px; height: 60px; border-radius: 50%; display: flex;
+            align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 1.75rem;
+        }
+        .feature-card h5 { font-weight: 700; margin-bottom: 0.5rem; }
+        .feature-card p { font-size: 0.85rem; color: #6c757d; margin-bottom: 1.5rem; min-height: 40px; }
+        .c-blue { background-color: #EBF2FE; color: #2775EC; }
+        .c-green { background-color: #E6F8F2; color: #00A971; }
+        .c-purple { background-color: #F1F0FD; color: #6E62E5; }
+        
+        /* --- [แก้ไข] โค้ดสำหรับ Egg Loader --- */
+        #loading-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 9999; display: flex; justify-content: center; align-items: center;
+            background-color: rgba(255, 255, 255, 0.7); backdrop-filter: blur(5px);
+        }
+        .egg-loader { width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; }
+        .egg {
+            width: 50px; height: 65px; background-color: #fad6b7;
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+            animation: wobble 1.5s ease-in-out infinite;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            border: 2px solid #e69963;
+        }
+        @keyframes wobble { 0%, 100% { transform: rotate(0deg); } 15% { transform: rotate(-5deg); } 30% { transform: rotate(3deg); } 45% { transform: rotate(-3deg); } 60% { transform: rotate(2deg); } 75% { transform: rotate(-1deg); } }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay"><div class="egg-loader"><div class="egg"></div></div></div>
+
+    <div class="main-container">
+        <div class="text-center mb-5">
+            <h1 class="display-6 fw-bold">ระบบขายและจัดการลูกค้า</h1>
+            <p class="text-muted fs-5">เลือกเมนูที่ต้องการเพื่อเริ่มต้นใช้งาน</p>
+        </div>
+        <div class="row row-cols-1 row-cols-md-3 g-4">
+            <div class="col">
+                <a href="<?= ScriptApp.getService().getUrl() ?>?page=stock" class="text-decoration-none text-dark feature-card" onclick="document.getElementById('loading-overlay').style.display='flex'">
+                    <div class="icon-circle c-blue"><i class="bi bi-bar-chart-line-fill"></i></div>
+                    <h5>คลังสินค้า</h5><p>ตรวจสอบจำนวนสินค้าคงคลังทั้งหมดในระบบ</p>
+                </a>
+            </div>
+            <div class="col">
+                <a href="<?= ScriptApp.getService().getUrl() ?>?page=sales" class="text-decoration-none text-dark feature-card" onclick="document.getElementById('loading-overlay').style.display='flex'">
+                    <div class="icon-circle c-green"><i class="bi bi-receipt-cutoff"></i></div>
+                    <h5>ประวัติการขาย</h5><p>ดูและจัดการเอกสารการขายทั้งหมด</p>
+                </a>
+            </div>
+            <div class="col">
+                <a href="<?= ScriptApp.getService().getUrl() ?>?page=customers" class="text-decoration-none text-dark feature-card" onclick="document.getElementById('loading-overlay').style.display='flex'">
+                    <div class="icon-circle c-purple"><i class="bi bi-people-fill"></i></div>
+                    <h5>จัดการลูกค้า</h5><p>เพิ่ม ลบ หรือแก้ไขข้อมูลลูกค้าในระบบ</p>
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 
