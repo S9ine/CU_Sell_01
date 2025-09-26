@@ -1,0 +1,916 @@
+<script>
+
+// ===================================================
+// === 1. GLOBAL VARIABLES & ELEMENT CONSTANTS ===
+// ===================================================
+
+// Global Data Holders
+let allSalesData = [], allCustomerData = [], masterCustomerList = [];
+let masterProductList = [];
+let allStockData = { headers: [], data: [] };
+
+
+// Pagination State
+let salesCurrentPage = 1, customersCurrentPage = 1;
+const ROWS_PER_PAGE = 10;
+
+// Modal Instances
+let salesModalInstance, settingsModalInstance, customerModalInstance;
+
+// Form Elements (Declared early to prevent initialization errors)
+const salesForm = document.getElementById('salesForm');
+const salesSubmitBtn = document.getElementById('sales-submit-btn');
+const customerForm = document.getElementById('customerForm');
+const customerSubmitBtn = document.getElementById('customer-submit-btn');
+const salesFormDocId = document.getElementById('salesFormDocId');
+
+
+// ===================================================
+// === 2. INITIAL PAGE LOAD & EVENT LISTENERS SETUP ===
+// ===================================================
+
+window.addEventListener('load', () => {
+    // Initialize Bootstrap Modals
+    salesModalInstance = new bootstrap.Modal(document.getElementById('sales-form-modal'));
+    settingsModalInstance = new bootstrap.Modal(document.getElementById('settings-modal'));
+    customerModalInstance = new bootstrap.Modal(document.getElementById('customer-form-modal'));
+
+    // Load all initial data in a single server call
+    loadInitialData();
+    
+    // Add the first item row to the sales form
+    addSalesItemRow();
+
+    // Setup all event listeners
+    setupEventListeners();
+});
+
+function setupEventListeners() {
+    // Tab navigation
+    document.getElementById('myTab').addEventListener('click', e => {
+        if (e.target.matches('.nav-link')) {
+            const tabName = e.target.getAttribute("data-tab");
+            const targetTabContentId = (tabName === 'sales') ? 'sales-section' : `${tabName}-section`;
+            document.querySelectorAll("#myTab .nav-link, .tab-content").forEach(el => el.classList.remove("active"));
+            e.target.classList.add("active");
+            document.getElementById(targetTabContentId).classList.add("active");
+        }
+    });
+
+    // Settings form submission
+    document.getElementById("settings-form").addEventListener("submit", handleSettingsSubmit);
+
+    // Sales form submission
+    salesForm.addEventListener('submit', handleSalesSubmit);
+
+    // Customer form submission
+    customerForm.addEventListener('submit', handleCustomerSubmit);
+
+    // Search inputs
+    document.getElementById('sales-search').addEventListener('input', () => { salesCurrentPage = 1; displaySalesHistory(); });
+    document.getElementById('customer-search').addEventListener('input', () => { customersCurrentPage = 1; displayCustomerList(); });
+    document.getElementById('stock-search').addEventListener('input', displayStockData);
+}
+
+
+// ===================================================
+// === 3. DATA LOADING AND DISPLAY FUNCTIONS ===
+// ===================================================
+
+function loadInitialData() {
+    showLoader();
+    google.script.run.withSuccessHandler(response => {
+        hideLoader();
+        if (response.error) {
+            onFailure({ message: response.error });
+            return;
+        }
+
+        // 1. Sales History
+        allSalesData = response.salesData || [];
+        displaySalesHistory();
+
+        // 2. Customer Data
+        allCustomerData = response.customerData || [];
+        masterCustomerList = response.customerData || [];
+        populateDatalist('customer-options', masterCustomerList.map(c => c.name));
+        displayCustomerList();
+
+        // 3. Stock Data
+        allStockData = response.stockData || { headers: [], data: [] };
+        displayStockData();
+
+        // 4. Dropdown Data
+        masterProductList = response.productList || [];
+        populateDatalist('product-options', masterProductList.map(p => p.displayValue));
+        populateSelect('salesperson', response.employeeList || []);
+
+    }).withFailureHandler(onFailure).getInitialData();
+}
+
+function loadSalesHistory() {
+    showLoader();
+    google.script.run.withSuccessHandler(data => {
+        hideLoader();
+        allSalesData = data || [];
+        salesCurrentPage = 1;
+        displaySalesHistory();
+    }).withFailureHandler(onFailure).getSalesHistory();
+}
+
+function loadCustomerList() {
+    showLoader();
+    google.script.run.withSuccessHandler(data => {
+        hideLoader();
+        allCustomerData = data || [];
+        masterCustomerList = data || [];
+        populateDatalist('customer-options', masterCustomerList.map(c => c.name));
+        customersCurrentPage = 1;
+        displayCustomerList();
+    }).withFailureHandler(onFailure).getCustomers();
+}
+
+function displaySalesHistory() {
+    const searchTerm = document.getElementById('sales-search').value.toLowerCase();
+    const filteredData = searchTerm ? allSalesData.filter(rec => rec.docId.toLowerCase().includes(searchTerm) || rec.customerName.toLowerCase().includes(searchTerm) || rec.salesperson.toLowerCase().includes(searchTerm)) : allSalesData;
+    
+    const tbody = document.getElementById('salesHistoryTableBody');
+    tbody.innerHTML = '';
+    
+    if (filteredData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">ไม่พบข้อมูล</td></tr>';
+    } else {
+        const paginatedData = filteredData.slice((salesCurrentPage - 1) * ROWS_PER_PAGE, salesCurrentPage * ROWS_PER_PAGE);
+        paginatedData.forEach(rec => {
+            const itemsHtml = rec.items.map(i => `<li>${i.name} (${i.quantity} ${i.unitName})</li>`).join('');
+            const row = tbody.insertRow();
+            // [UPDATED] เพิ่มปุ่มแก้ไข (bi-pencil-fill)
+            row.innerHTML = `
+                <td>${rec.docId}</td>
+                <td>${rec.date}</td>
+                <td><div>${rec.customerName}</div>
+                <small class="text-muted">${rec.customerTel || ''}</small></td>
+                <td>${rec.salesperson}</td><td><ul class="list-unstyled mb-0 small">${itemsHtml}</ul></td>
+                <td class="text-end"><b>฿ ${rec.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-warning" onclick='editSale(${JSON.stringify(rec)})'><i class="bi bi-pencil-fill"></i></button>
+                        <button class="btn btn-info" onclick='printSaleRecord(${JSON.stringify(rec)})'><i class="bi bi-printer-fill"></i></button>
+                        <button class="btn btn-danger" onclick="deleteSale('${rec.docId}')"><i class="bi bi-trash-fill"></i></button>
+                    </div>
+                </td>`;
+        });
+    }
+    setupPagination('sales-pagination', salesCurrentPage, filteredData.length, (page) => {
+        salesCurrentPage = page;
+        displaySalesHistory();
+    });
+}
+
+function displayCustomerList() {
+    const searchTerm = document.getElementById('customer-search').value.toLowerCase();
+    const filteredData = searchTerm ? allCustomerData.filter(c => c.name.toLowerCase().includes(searchTerm)) : allCustomerData;
+    
+    const tbody = document.getElementById('customerTableBody');
+    tbody.innerHTML = '';
+
+    if (filteredData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">ไม่พบข้อมูลลูกค้า</td></tr>';
+    } else {
+        const paginatedData = filteredData.slice((customersCurrentPage - 1) * ROWS_PER_PAGE, customersCurrentPage * ROWS_PER_PAGE);
+        paginatedData.forEach(customer => {
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td>${customer.id}</td><td>${customer.name}</td><td>${customer.tel}</td><td>${customer.address}</td>
+                <td class="text-end">
+                    <button class="btn btn-warning btn-sm" onclick='editCustomer(${JSON.stringify(customer)})'><i class="bi bi-pencil"></i></button> 
+                    <button class="btn btn-danger btn-sm" onclick="deleteCustomer('${customer.id}')"><i class="bi bi-trash"></i></button>
+                </td>`;
+        });
+    }
+    setupCustomerPagination(filteredData.length);
+}
+
+function displayStockData() {
+    const head = document.getElementById("stockTableHead");
+    const body = document.getElementById("stockTableBody");
+    head.innerHTML = ""; 
+    body.innerHTML = "";
+
+    if (allStockData.error) { 
+        body.innerHTML = `<tr><td colspan="10" class="text-center text-danger">เกิดข้อผิดพลาด: ${allStockData.error}</td></tr>`; 
+        return; 
+    }
+
+    const searchTerm = document.getElementById('stock-search').value.toLowerCase();
+    const filteredData = searchTerm 
+        ? allStockData.data.filter(row => row.some(cell => String(cell).toLowerCase().includes(searchTerm))) 
+        : allStockData.data;
+
+    if (allStockData.headers && allStockData.headers.length > 0) {
+        head.innerHTML = `<tr><th>${allStockData.headers.join('</th><th>')}</th></tr>`;
+    }
+
+    if (filteredData.length > 0) {
+        let tableHtml = '';
+        filteredData.forEach(rowData => {
+            tableHtml += '<tr>';
+            rowData.forEach((cellData, index) => {
+                if (index === 2) { 
+                    const number = parseFloat(String(cellData).replace(/,/g, ''));
+                    const formattedNumber = !isNaN(number) ? number.toLocaleString('en-US') : cellData;
+                    // [UPDATED] เปลี่ยนจาก right เป็น center
+                    tableHtml += `<td style="text-align: center;">${formattedNumber}</td>`;
+                } else {
+                    tableHtml += `<td>${cellData}</td>`;
+                }
+            });
+            tableHtml += '</tr>';
+        });
+        body.innerHTML = tableHtml;
+    } else {
+        const colCount = allStockData.headers ? allStockData.headers.length : 4;
+        body.innerHTML = `<tr><td colspan="${colCount}" class="text-center">ไม่พบข้อมูล</td></tr>`;
+    }
+}
+
+
+
+
+// ===================================================
+// === 4. FORM HANDLING & SUBMISSIONS ===
+// ===================================================
+
+function handleSettingsSubmit(e) {
+    e.preventDefault();
+    const settingsData = { 
+        companyName: document.getElementById("setting-companyName").value, 
+        address1: document.getElementById("setting-address1").value, 
+        address2: document.getElementById("setting-address2").value, 
+        contactInfo: document.getElementById("setting-contactInfo").value 
+    };
+    showLoader();
+    google.script.run.withSuccessHandler(response => {
+        hideLoader();
+        showToast(response.message, response.success ? 'success' : 'danger');
+        if (response.success) { 
+            settingsModalInstance.hide();
+        }
+    }).withFailureHandler(onFailure).saveDocumentInfo(settingsData);
+}
+
+function handleSalesSubmit(e) {
+    e.preventDefault();
+    salesSubmitBtn.disabled = true;
+
+    // ดึงค่า subtotal, discount, และ grandTotal จากนอก loop เพื่อประสิทธิภาพ
+    const subtotal = parseFloat(document.getElementById('subtotal').innerText.replace(/[฿,]/g, ''));
+    const discount = parseFloat(document.getElementById('discount').value.replace(/,/g, '')) || 0;
+    const grandTotal = parseFloat(document.getElementById('grandTotal').innerText.replace(/[฿,]/g, ''));
+
+    const items = Array.from(document.getElementById('salesItemTableBody').rows).map(row => {
+        // แก้ไขลำดับการประกาศตัวแปรให้ถูกต้อง
+        const quantity = parseFloat(row.querySelector('[name="quantity"]').value);
+        const price = parseFloat(row.querySelector('[name="price"]').value.replace(/,/g, '')) || 0;
+        const unitSelect = row.querySelector('[name="unit"]');
+        const selectedValue = row.querySelector('[name="itemName"]').value;
+        const product = masterProductList.find(p => p.displayValue === selectedValue);
+
+        // คำนวณ lineTotal ด้วยความแม่นยำทศนิยม 2 ตำแหน่ง
+        const unitFactor = parseFloat(unitSelect.value) || 1;
+        const lineTotal = parseFloat((quantity * price * unitFactor).toFixed(2));
+
+        return {
+            name: product ? product.productName : selectedValue,
+            quantity: quantity,
+            price: parseFloat(price.toFixed(2)),
+            unitName: unitSelect.options[unitSelect.selectedIndex].text,
+            total: lineTotal,
+            baseQuantity: quantity * unitFactor
+        };
+    }).filter(item => item.name && item.quantity > 0 && item.price >= 0);
+
+    if (items.length === 0) {
+        showToast('กรุณาเพิ่มรายการสินค้า', 'danger');
+        salesSubmitBtn.disabled = false;
+        return;
+    }
+
+    const formData = {
+        docId: salesFormDocId.value,
+        customerName: document.getElementById('salesCustomerName').value,
+        customerTel: document.getElementById('salesCustomerTel').value,
+        salesperson: document.getElementById('salesperson').value,
+        // ใช้ค่าที่ประกาศไว้ด้านบนและแปลงเป็นทศนิยม 2 ตำแหน่ง
+        subtotal: parseFloat(subtotal.toFixed(2)),
+        discount: parseFloat(discount.toFixed(2)),
+        grandTotal: parseFloat(grandTotal.toFixed(2)),
+        items: items
+    };
+    const isUpdate = !!formData.docId;
+    const serverFunction = isUpdate ? 'updateSale' : 'saveSalesData';
+    showLoader();
+    google.script.run
+        .withSuccessHandler(response => {
+            hideLoader();
+            salesSubmitBtn.disabled = false;
+            if (response.success) {
+                showToast(response.message, 'success');
+                resetSalesForm();
+                salesModalInstance.hide();
+                // โหลดข้อมูลใหม่ทั้งหมดเพื่อให้เห็นการเปลี่ยนแปลง
+                loadInitialData(); 
+            } else {
+                showToast(response.message, 'danger');
+            }
+        })
+        .withFailureHandler(onFailure)
+        [serverFunction](formData);
+}
+
+function handleCustomerSubmit(e) {
+    e.preventDefault();
+    customerSubmitBtn.disabled = true;
+
+    const customerData = {
+        id: document.getElementById('customerId').value,
+        name: document.getElementById('customerName').value,
+        tel: document.getElementById('customerTel').value,
+        address: document.getElementById('customerAddress').value
+    };
+
+    const serverFunction = customerData.id ? 'updateCustomer' : 'addCustomer';
+    
+    showLoader();
+    google.script.run.withSuccessHandler(response => {
+        hideLoader();
+        customerSubmitBtn.disabled = false;
+        if (response.success) {
+            showToast(response.message, 'success');
+            customerModalInstance.hide();
+            loadCustomerList(); // Reload customer list to show changes
+        } else { 
+            showToast(response.message, 'danger'); 
+        }
+    }).withFailureHandler(onFailure)[serverFunction](customerData);
+}
+
+function deleteSale(docId) {
+    if (confirm(`คุณต้องการลบเอกสารการขาย ${docId} ใช่หรือไม่?`)) {
+        showLoader();
+        google.script.run.withSuccessHandler(response => {
+            hideLoader();
+            showToast(response.message, response.success ? 'success' : 'danger');
+            if (response.success) {
+                loadSalesHistory();
+            }
+        }).withFailureHandler(onFailure).deleteSaleById(docId);
+    }
+}
+
+function deleteCustomer(customerId) {
+    if (confirm(`คุณต้องการลบข้อมูลลูกค้ารหัส ${customerId} ใช่หรือไม่?`)) {
+        showLoader();
+        google.script.run.withSuccessHandler(response => {
+            hideLoader();
+            showToast(response.message, response.success ? 'success' : 'danger');
+            if (response.success) { 
+                loadCustomerList(); 
+            }
+        }).withFailureHandler(onFailure).deleteCustomer(customerId);
+    }
+}
+
+
+// ===================================================
+// === 5. SALES FORM DYNAMIC BEHAVIOR ===
+// ===================================================
+
+function addSalesItemRow() {
+    const tbody = document.getElementById('salesItemTableBody');
+    const newRow = tbody.insertRow();
+    newRow.innerHTML = `
+        <td class="align-top">
+            <input class="form-control form-control-sm" list="product-options" name="itemName" required oninput="checkStock(this)" placeholder="ค้นหาสินค้า...">
+            <small class="text-muted stock-display"></small> 
+        </td>
+        <td class="align-top" style="max-width: 90px;">
+            <input type="number" class="form-control form-control-sm" name="quantity" value="1" min="1" max="999999" oninput="calculateTotals(); checkAllRowsStockValidity();" required>
+        </td>
+        <td class="align-top" style="max-width: 110px;">
+            <select class="form-select form-select-sm unit-select" name="unit" onchange="calculateTotals(); checkAllRowsStockValidity();">
+                <option value="1" selected>ฟอง</option>
+                <option value="30">แผง</option>
+            </select>
+        </td>
+        <td class="align-top" style="max-width: 120px;">
+            <input type="number" class="form-control form-control-sm text-end" name="price" value="0.00" min="0" max="9999999.99" step="0.01" oninput="calculateTotals()" required>
+        </td>
+        <td class="align-top text-end">
+            <span class="fs-6 fw-bold">฿ 0.00</span>
+        </td>
+        <td class="align-top">
+            <button type="button" class="btn btn-danger btn-sm" onclick="deleteSalesItemRow(this)"><i class="bi bi-x-lg"></i></button>
+        </td>
+    `;
+}
+
+function deleteSalesItemRow(btn) {
+    if (document.getElementById('salesItemTableBody').rows.length > 1) {
+        btn.closest('tr').remove();
+        calculateTotals();
+        checkAllRowsStockValidity();
+    } else { 
+        showToast('ต้องมีอย่างน้อย 1 รายการ', 'warning'); 
+    }
+}
+
+function calculateTotals() {
+    let subtotal = 0;
+    document.getElementById('salesItemTableBody').querySelectorAll('tr').forEach(row => {
+        const quantity = parseFloat(row.querySelector('[name="quantity"]').value) || 0;
+        const price = parseFloat(row.querySelector('[name="price"]').value.replace(/,/g, '')) || 0;
+        const unitFactor = parseFloat(row.querySelector('[name="unit"]').value) || 1;
+        
+        const lineTotal = parseFloat((quantity * price * unitFactor).toFixed(2));
+        
+        subtotal += lineTotal;
+        
+        row.cells[4].innerHTML = `<span class="fs-6 fw-bold">฿ ${lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
+    });
+
+    let discount = parseFloat(document.getElementById('discount').value.replace(/,/g, '')) || 0;
+    
+    // --- ส่วนที่เพิ่มเข้ามา ---
+    // ตรวจสอบว่าส่วนลดมากกว่ายอดรวมหรือไม่
+    if (discount > subtotal) {
+        discount = subtotal; // ถ้าใช่, ให้ส่วนลดมีค่าเท่ากับยอดรวม
+        // อัปเดตค่าในช่อง input ให้ผู้ใช้เห็น
+        document.getElementById('discount').value = discount.toLocaleString('en-US'); 
+    }
+    // --- จบส่วนที่เพิ่มเข้ามา ---
+
+    const grandTotal = parseFloat((subtotal - discount).toFixed(2));
+    
+    document.getElementById('subtotal').innerText = `฿ ${subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('grandTotal').innerText = `฿ ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function checkStock(inputElement) {
+    const selectedValue = inputElement.value;
+    const displayElement = inputElement.closest('td').querySelector('.stock-display');
+    const product = masterProductList.find(p => p.displayValue === selectedValue);
+
+    if (product) {
+        displayElement.innerHTML = `คงเหลือ: ${product.stockCentral.toLocaleString('en-US')}`;
+        displayElement.style.color = product.stockCentral > 0 ? '#6c757d' : '#dc3545';
+    } else {
+        displayElement.innerHTML = '';
+    }
+    checkAllRowsStockValidity();
+}
+
+function checkAllRowsStockValidity() {
+    let isAnyRowInvalid = false;
+    document.getElementById('salesItemTableBody').querySelectorAll('tr').forEach(row => {
+        const productNameInput = row.querySelector('[name="itemName"]');
+        const quantityInput = row.querySelector('[name="quantity"]');
+        const unitSelect = row.querySelector('[name="unit"]');
+        const product = masterProductList.find(p => p.displayValue === productNameInput.value);
+
+        if (!product || !quantityInput.value) {
+            quantityInput.classList.remove('is-invalid');
+            return;
+        }
+
+        const quantitySold = (parseFloat(quantityInput.value) || 0) * (parseFloat(unitSelect.value) || 1);
+        const stockAvailable = product.stockCentral;
+
+        if (quantitySold > stockAvailable) {
+            quantityInput.classList.add('is-invalid');
+            isAnyRowInvalid = true;
+        } else {
+            quantityInput.classList.remove('is-invalid');
+        }
+    });
+    salesSubmitBtn.disabled = isAnyRowInvalid;
+}
+
+/**
+ * [UPDATED] ฟังก์ชันสำหรับเตรียมฟอร์มเพื่อการแก้ไข
+ * @param {object} record - ข้อมูลบิลขายที่ต้องการแก้ไข
+ */
+function editSale(record) {
+    resetSalesForm(); // เริ่มจากการล้างฟอร์มก่อน
+
+    // 1. ตั้งค่า Title, ปุ่ม, และ Doc ID
+    document.getElementById('salesFormModalLabel').innerText = `แก้ไขเอกสาร: ${record.docId}`;
+    salesFormDocId.value = record.docId;
+    salesSubmitBtn.innerText = 'อัปเดตข้อมูล';
+    salesSubmitBtn.classList.remove('btn-primary');
+    salesSubmitBtn.classList.add('btn-warning');
+
+    // 2. [FIXED] เติมข้อมูลลูกค้าและพนักงานขาย และทำให้ช่องพนักงานขายแก้ไขไม่ได้
+    document.getElementById('salesCustomerName').value = record.customerName;
+    document.getElementById('salesCustomerTel').value = record.customerTel;
+    document.getElementById('salesperson').value = record.salesperson;
+    document.getElementById('salesperson').disabled = true; // << บรรทัดนี้คือส่วนที่เพิ่มเข้ามา
+    document.getElementById('discount').value = record.discount;
+
+    // 3. สร้างรายการสินค้าเดิมขึ้นมาใหม่
+    const tbody = document.getElementById('salesItemTableBody');
+    tbody.innerHTML = ''; 
+    record.items.forEach(item => {
+        addSalesItemRow();
+        const newRow = tbody.rows[tbody.rows.length - 1];
+        
+        const product = masterProductList.find(p => p.productName === item.name);
+        if (product) {
+            newRow.querySelector('[name="itemName"]').value = product.displayValue;
+        }
+
+        newRow.querySelector('[name="quantity"]').value = item.quantity;
+        newRow.querySelector('[name="price"]').value = item.price;
+        
+        const unitSelect = newRow.querySelector('[name="unit"]');
+        for (let option of unitSelect.options) {
+            if (option.text === item.unitName) {
+                option.selected = true;
+                break;
+            }
+        }
+    });
+
+    // 4. คำนวณยอดรวมและเปิด Modal
+    calculateTotals();
+    checkAllRowsStockValidity();
+    salesModalInstance.show();
+}
+
+function resetSalesForm() {
+    salesForm.reset();
+    salesFormDocId.value = '';
+    document.getElementById('salesCustomerTel').value = '';
+    document.getElementById('discount').value = '0';
+    document.getElementById('salesItemTableBody').innerHTML = '';
+    addSalesItemRow();
+    calculateTotals();
+    checkAllRowsStockValidity();
+
+    // คืนค่า Title, ปุ่ม, และสถานะของช่องพนักงานขาย
+    document.getElementById('salesFormModalLabel').innerText = 'สร้างเอกสารขาย';
+    salesSubmitBtn.innerText = 'บันทึกการขาย';
+    salesSubmitBtn.classList.remove('btn-warning');
+    salesSubmitBtn.classList.add('btn-primary');
+    document.getElementById('salesperson').disabled = false; // [UPDATED] ทำให้แก้ไขได้
+}
+
+
+function resetCustomerForm() {
+    customerForm.reset(); 
+    document.getElementById('customerId').value = '';
+    document.getElementById('customer-modal-title').innerText = 'เพิ่มข้อมูลลูกค้าใหม่';
+    customerSubmitBtn.innerHTML = '<i class="bi bi-save"></i> บันทึกข้อมูล';
+}
+
+function editCustomer(customer) {
+    resetCustomerForm();
+    document.getElementById('customerId').value = customer.id;
+    document.getElementById('customerName').value = customer.name;
+    document.getElementById('customerTel').value = customer.tel;
+    document.getElementById('customerAddress').value = customer.address;
+    document.getElementById('customer-modal-title').innerText = `แก้ไขข้อมูล: ${customer.name}`;
+    customerSubmitBtn.innerHTML = '<i class="bi bi-pencil-square"></i> อัปเดตข้อมูล';
+    customerModalInstance.show();
+}
+
+
+// ===================================================
+// === 6. UTILITY & HELPER FUNCTIONS ===
+// ===================================================
+
+/**
+ * [REFACTORED] A single, reusable function to create pagination controls.
+ * @param {string} containerId - The ID of the <ul> element for pagination.
+ * @param {number} currentPage - The currently active page.
+ * @param {number} totalRows - The total number of items to paginate.
+ * @param {function} pageChangeCallback - The function to call when a page is clicked.
+ */
+function setupPagination(containerId, currentPage, totalRows, pageChangeCallback) {
+    const paginationContainer = document.getElementById(containerId);
+    paginationContainer.innerHTML = '';
+    if (totalRows <= ROWS_PER_PAGE) return;
+
+    const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+
+    const createPageItem = (page, content, isDisabled = false, isActive = false) => {
+        const li = document.createElement('li');
+        li.className = `page-item ${isDisabled ? 'disabled' : ''} ${isActive ? 'active' : ''}`;
+        const a = document.createElement('a');
+        a.className = 'page-link';
+        a.href = '#';
+        a.innerHTML = content;
+        if (!isDisabled) {
+            a.onclick = (e) => { 
+                e.preventDefault(); 
+                pageChangeCallback(page); 
+            };
+        }
+        li.appendChild(a);
+        return li;
+    };
+
+    // Previous button
+    paginationContainer.appendChild(createPageItem(currentPage - 1, '&laquo;', currentPage === 1));
+
+    // Page numbers
+    for (let i = 1; i <= totalPages; i++) {
+        paginationContainer.appendChild(createPageItem(i, i, false, i === currentPage));
+    }
+    
+    // Next button
+    paginationContainer.appendChild(createPageItem(currentPage + 1, '&raquo;', currentPage === totalPages));
+}
+
+function setupSalesPagination(totalRows) {
+    const paginationContainer = document.getElementById('sales-pagination');
+    paginationContainer.innerHTML = '';
+    if (totalRows <= ROWS_PER_PAGE) return;
+    const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+    const createPageItem = (page, content, isDisabled = false, isActive = false) => {
+        const li = document.createElement('li');
+        li.className = `page-item ${isDisabled ? 'disabled' : ''} ${isActive ? 'active' : ''}`;
+        const a = document.createElement('a');
+        a.className = 'page-link';
+        a.href = '#';
+        a.innerHTML = content;
+        if (!isDisabled) {
+            a.onclick = (e) => { e.preventDefault(); salesCurrentPage = page; displaySalesHistory(); };
+        }
+        li.appendChild(a);
+        return li;
+    };
+    paginationContainer.appendChild(createPageItem(salesCurrentPage - 1, '&laquo;', salesCurrentPage === 1));
+    for (let i = 1; i <= totalPages; i++) {
+        paginationContainer.appendChild(createPageItem(i, i, false, i === salesCurrentPage));
+    }
+    paginationContainer.appendChild(createPageItem(salesCurrentPage + 1, '&raquo;', salesCurrentPage === totalPages));
+}
+
+function setupCustomerPagination(totalRows) {
+    const paginationContainer = document.getElementById('customer-pagination');
+    paginationContainer.innerHTML = '';
+    if (totalRows <= ROWS_PER_PAGE) return;
+    const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+    const createPageItem = (page, content, isDisabled = false, isActive = false) => {
+        const li = document.createElement('li');
+        li.className = `page-item ${isDisabled ? 'disabled' : ''} ${isActive ? 'active' : ''}`;
+        const a = document.createElement('a');
+        a.className = 'page-link';
+        a.href = '#';
+        a.innerHTML = content;
+        if (!isDisabled) {
+            a.onclick = (e) => { e.preventDefault(); customersCurrentPage = page; displayCustomerList(); };
+        }
+        li.appendChild(a);
+        return li;
+    };
+    paginationContainer.appendChild(createPageItem(customersCurrentPage - 1, '&laquo;', customersCurrentPage === 1));
+    for (let i = 1; i <= totalPages; i++) {
+        paginationContainer.appendChild(createPageItem(i, i, false, i === customersCurrentPage));
+    }
+    paginationContainer.appendChild(createPageItem(customersCurrentPage + 1, '&raquo;', customersCurrentPage === totalPages));
+}
+
+function populateDatalist(id, items) {
+    const list = document.getElementById(id);
+    if(list) {
+        list.innerHTML = items.map(item => `<option value="${item}"></option>`).join('');
+    }
+}
+
+function populateSelect(selectId, items) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const placeholder = select.options[0];
+    select.innerHTML = ''; 
+    select.appendChild(placeholder);
+    if (items) {
+        items.forEach(item => {
+            const opt = document.createElement("option");
+            opt.value = item; 
+            opt.textContent = item;
+            select.appendChild(opt);
+        });
+    }
+}
+
+function handleCustomerSelect(customerName) {
+    const customer = masterCustomerList.find(c => c.name === customerName);
+    document.getElementById('salesCustomerTel').value = customer ? (customer.tel || '') : '';
+}
+
+function openSettings() {
+    showLoader();
+    google.script.run.withSuccessHandler(docInfo => {
+        hideLoader();
+        document.getElementById("setting-companyName").value = docInfo.companyName || "";
+        document.getElementById("setting-address1").value = docInfo.address1 || "";
+        document.getElementById("setting-address2").value = docInfo.address2 || "";
+        document.getElementById("setting-contactInfo").value = docInfo.contactInfo || "";
+        settingsModalInstance.show();
+    }).withFailureHandler(onFailure).getDocumentInfo();
+}
+
+function handleClearCache() {
+    if (confirm('ต้องการล้างแคชและโหลดข้อมูลใหม่ทั้งหมดหรือไม่?')) {
+        showLoader();
+        google.script.run.withSuccessHandler(res => {
+            hideLoader();
+            if (res.success) {
+                showToast('ล้างแคชสำเร็จ! กำลังโหลดข้อมูลใหม่...', 'success');
+                loadInitialData(); // Reload all data from server
+            } else {
+                showToast(`เกิดข้อผิดพลาด: ${res.message}`, 'danger');
+            }
+        }).withFailureHandler(onFailure).clearServerCache();
+    }
+}
+
+function formatNumberInput(element) {
+    let cursorPosition = element.selectionStart;
+    let originalLength = element.value.length;
+    let value = element.value.replace(/,/g, '');
+    
+    if (isNaN(parseFloat(value))) {
+      element.value = '';
+    } else {
+      element.value = parseFloat(value).toLocaleString('en-US');
+    }
+    
+    let newLength = element.value.length;
+    cursorPosition = newLength - originalLength + cursorPosition;
+    element.setSelectionRange(cursorPosition, cursorPosition);
+    calculateTotals();
+}
+
+function showLoader() { document.getElementById('loading-overlay').style.display = 'flex'; }
+function hideLoader() { document.getElementById('loading-overlay').style.display = 'none'; }
+
+function showToast(message, level = 'success') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast-notification toast-${level}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => toast.classList.add('show'), 100);
+    setTimeout(() => {
+        toast.classList.remove('show');
+        toast.addEventListener('transitionend', () => toast.remove());
+    }, 4000);
+}
+
+function onFailure(error) {
+    hideLoader();
+    showToast(`เกิดข้อผิดพลาด: ${error.message}`, 'danger');
+    if(salesSubmitBtn) salesSubmitBtn.disabled = false;
+    if(customerSubmitBtn) customerSubmitBtn.disabled = false;
+}
+
+// Print functions (no changes needed, but included for completeness)
+function printSaleRecord(record) {
+    showLoader();
+    google.script.run.withSuccessHandler(docInfo => {
+        hideLoader();
+        const printContent = getSalesPrintHtml(record, docInfo);
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`<html><head><title>ใบเสร็จ - ${record.docId}</title>${getPrintStyles()}</head><body>${printContent}</body></html>`);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => { printWindow.print(); }, 500);
+    }).withFailureHandler(onFailure).getDocumentInfo();
+}
+
+function getPrintStyles() {
+    return `
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
+            body { font-family: 'Sarabun', 'Arial', sans-serif; margin: 0; color: #333; }
+            .page { width: 210mm; min-height: 297mm; padding: 20mm; margin: auto; box-sizing: border-box; background: #fff; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 10mm; border-bottom: 2px solid #eee; }
+            .company-details h2 { margin: 0; font-size: 1.8em; color: #0d6efd; }
+            .company-details p { margin: 2px 0; font-size: 0.9em; color: #555; }
+            .doc-title { text-align: right; }
+            .doc-title h1 { margin: 0; font-size: 2.5em; }
+            .doc-title p { margin: 2px 0; font-size: 0.9em; }
+            table { width: 100%; border-collapse: collapse; }
+            .info-section { margin: 8mm 0; }
+            .info-section table td { padding: 5px; font-size: 0.9em; }
+            .items-table { margin-top: 8mm; }
+            .items-table thead { background-color: #f8f9fa !important; -webkit-print-color-adjust: exact; }
+            .items-table th, .items-table td { border: 1px solid #dee2e6; padding: 8px; font-size: 0.9em; text-align: left; }
+            .items-table .text-end { text-align: right; }
+            .items-table .text-center { text-align: center; }
+            
+            /* --- CSS ที่ปรับปรุง --- */
+            /* จัดสไตล์ให้ tfoot เพื่อความสวยงาม */
+            .items-table tfoot td {
+                border: none; /* เอาเส้นขอบของ cell ใน footer ออก */
+            }
+            .items-table tfoot .grand-total {
+                border-top: 2px solid #333; /* ย้ายเส้นขีดมาไว้ที่ tr แทน */
+            }
+            .items-table tfoot .grand-total td {
+                font-size: 1.1em;
+                font-weight: bold;
+            }
+            /* --- จบส่วนที่ปรับปรุง --- */
+
+            .footer { margin-top: 20mm; padding-top: 10mm; border-top: 1px solid #eee; display: flex; justify-content: space-around; text-align: center; font-size: 0.9em; }
+            .signature-box { width: 40%; }
+            .signature-box .line { margin-top: 20mm; border-bottom: 1px solid #555; }
+            .signature-box p { margin: 5px 0 0 0; }
+        </style>
+    `;
+}
+
+function getSalesPrintHtml(rec, info) {
+    let itemsHtml = rec.items.map((item, i) => `
+        <tr>
+            <td class="text-center">${i + 1}</td>
+            <td>${item.name}</td>
+            <td class="text-center">${(item.quantity || 0).toLocaleString('en-US')} ${item.unitName}</td>
+            <td class="text-end">${(item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="text-end">${(item.total || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        </tr>
+    `).join('');
+
+    return `
+        <div class="page">
+            <div class="header">
+                <div class="company-details">
+                    <h2>${info.companyName}</h2>
+                    <p>${info.address1}</p>
+                    <p>${info.address2}</p>
+                    <p>${info.contactInfo}</p>
+                </div>
+                <div class="doc-title">
+                    <h1>ใบเสร็จรับเงิน / ใบส่งของ</h1>
+                    <p>เลขที่: ${rec.docId}</p>
+                    <p>วันที่: ${rec.date}</p>
+                </div>
+            </div>
+            <div class="info-section">
+                <table>
+                    <tr><td style="width:15%;"><strong>ลูกค้า:</strong></td><td>${rec.customerName}</td></tr>
+                    <tr><td><strong>ติดต่อ:</strong></td><td>${rec.customerTel || '-'}</td></tr>
+                    <tr><td><strong>พนักงานขาย:</strong></td><td>${rec.salesperson}</td></tr>
+                </table>
+            </div>
+            <table class="items-table">
+                <thead>
+                    <tr>
+                        <th class="text-center" style="width:5%">#</th>
+                        <th>รายการ</th>
+                        <th class="text-center" style="width:20%">จำนวน</th>
+                        <th class="text-end" style="width:20%">ราคา/หน่วย</th>
+                        <th class="text-end" style="width:20%">ราคารวม</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${itemsHtml}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="3"></td>
+                        <td>ยอดรวม</td>
+                        <td class="text-end">฿ ${rec.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="3"></td>
+                        <td>ส่วนลด</td>
+                        <td class="text-end">฿ ${rec.discount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>
+                    <tr class="grand-total">
+                        <td colspan="3"></td>
+                        <td><strong>ยอดรวมสุทธิ</strong></td>
+                        <td class="text-end"><strong>฿ ${rec.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
+                    </tr>
+                </tfoot>
+            </table>
+            
+            <div class="footer">
+                <div class="signature-box">
+                    <div class="line"></div>
+                    <p>ผู้รับสินค้า</p>
+                </div>
+                <div class="signature-box">
+                    <div class="line"></div>
+                    <p>ผู้ส่งสินค้า / พนักงานขาย</p>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+</script>
