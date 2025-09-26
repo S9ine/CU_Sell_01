@@ -391,18 +391,28 @@ function handleCustomerSubmit(e) {
     const serverFunction = customerData.id ? 'updateCustomer' : 'addCustomer';
     
     showLoader();
-    google.script.run.withSuccessHandler(response => {
-        hideLoader();
-        customerSubmitBtn.disabled = false;
-        if (response.success) {
-            showToast(response.message, 'success');
-            customerModalInstance.hide();
-            loadCustomerList(); // Reload customer list to show changes
-        } else { 
-            showToast(response.message, 'danger'); 
+google.script.run.withSuccessHandler(response => {
+    hideLoader();
+    customerSubmitBtn.disabled = false;
+    if (response.success) {
+        showToast(response.message, 'success');
+        customerModalInstance.hide();
+        loadCustomerList(); // โหลดรายชื่อลูกค้าใหม่ทั้งหมด (สำคัญ)
+
+        // --- ✨ ส่วนที่เพิ่มเข้ามา ---
+        // ถ้าเป็นการ "เพิ่มลูกค้า" และ server ส่งข้อมูลลูกค้าใหม่กลับมา
+        if (serverFunction === 'addCustomer' && response.newCustomer) {
+            // นำข้อมูลลูกค้าใหม่ไปใส่ในฟอร์มขายโดยอัตโนมัติ
+            document.getElementById('salesCustomerName').value = response.newCustomer.name;
+            document.getElementById('salesCustomerTel').value = response.newCustomer.tel;
+            document.getElementById('salesCustomerId').value = response.newCustomer.id;
         }
-    }).withFailureHandler(onFailure)[serverFunction](customerData);
-}
+        // --- จบส่วนที่เพิ่มเข้ามา ---
+
+    } else { 
+        showToast(response.message, 'danger'); 
+    }
+}).withFailureHandler(onFailure)[serverFunction](customerData);}
 
 function deleteSale(docId) {
     if (confirm(`คุณต้องการลบเอกสารการขาย ${docId} ใช่หรือไม่?`)) {
