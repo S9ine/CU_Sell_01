@@ -4,17 +4,11 @@
 // === 1. GLOBAL VARIABLES & ELEMENT CONSTANTS ===
 // ===================================================
 
-// Global Data Holders
 let allSalesData = [], allCustomerData = [], masterCustomerList = [];
 let masterProductList = [];
 let allStockData = { headers: [], data: [] };
-
-
-// Pagination State
 let salesCurrentPage = 1, customersCurrentPage = 1;
 const ROWS_PER_PAGE = 10;
-
-// Modal Instances
 let salesModalInstance, settingsModalInstance, customerModalInstance;
 
 // Form Elements (Declared early to prevent initialization errors)
@@ -28,6 +22,17 @@ const salesFormDocId = document.getElementById('salesFormDocId');
 // ===================================================
 // === 2. INITIAL PAGE LOAD & EVENT LISTENERS SETUP ===
 // ===================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    salesModalInstance = new bootstrap.Modal(document.getElementById('sales-form-modal'));
+    settingsModalInstance = new bootstrap.Modal(document.getElementById('settings-modal'));
+    customerModalInstance = new bootstrap.Modal(document.getElementById('customer-form-modal'));
+
+    renderModuleHeader();
+    loadInitialData();
+    addSalesItemRow();
+    setupEventListeners();
+});
 
 window.addEventListener('load', () => {
     // Initialize Bootstrap Modals
@@ -55,10 +60,12 @@ function setupEventListeners() {
             e.target.classList.add("active");
             document.getElementById(targetTabContentId).classList.add("active");
         }
-    });
+    }); 
 
     // Settings form submission
     document.getElementById("settings-form").addEventListener("submit", handleSettingsSubmit);
+    document.getElementById('salesForm').addEventListener('submit', handleSalesSubmit);
+    document.getElementById('customerForm').addEventListener('submit', handleCustomerSubmit);
 
     // Sales form submission
     salesForm.addEventListener('submit', handleSalesSubmit);
@@ -72,6 +79,64 @@ function setupEventListeners() {
     document.getElementById('stock-search').addEventListener('input', displayStockData);
 }
 
+// ===================================================
+// === [NEW] DYNAMIC UI RENDERING ===
+// ===================================================
+function renderModuleHeader() {
+    const mainContainer = document.querySelector('.main-container');
+    if (!mainContainer) return;
+
+    const moduleThemes = {
+        'stock':     { color: '#3b82f6', icon: 'bi-bar-chart-line-fill', title: 'ภาพรวมคลังสินค้า' },
+        'sales':     { color: '#22c55e', icon: 'bi-receipt-cutoff', title: 'ประวัติการขาย' },
+        'customers': { color: '#8b5cf6', icon: 'bi-people-fill', title: 'จัดการลูกค้า' }
+    };
+    const currentTheme = moduleThemes[initialPage] || moduleThemes['stock'];
+
+    const actionButtons = {
+        'stock': `<input type="text" id="stock-search" class="form-control form-control-sm" placeholder="ค้นหาสินค้า...">`,
+        'sales': `
+            <input type="text" id="sales-search" class="form-control form-control-sm" placeholder="ค้นหา...">
+            <button type="button" class="btn btn-sm" data-bs-toggle="modal" data-bs-target="#sales-form-modal">
+               <i class="bi bi-plus-circle-fill"></i> สร้างเอกสารขาย
+            </button>`,
+        'customers': `
+            <input type="text" id="customer-search" class="form-control form-control-sm" placeholder="ค้นหาชื่อลูกค้า...">
+            <button type="button" class="btn btn-sm" data-bs-toggle="modal" data-bs-target="#customer-form-modal" onclick="resetCustomerForm()">
+                <i class="bi bi-person-plus-fill"></i> เพิ่มลูกค้าใหม่
+            </button>`
+    };
+
+    const moduleHeaderHtml = `
+        <div class="module-header-sticky d-flex justify-content-between align-items-center mb-4 px-4 py-3" 
+             style="background-color: ${currentTheme.color}; color: white; border-radius: 0.75rem;">
+            <div class="d-flex align-items-center">
+                <a href="${dashboardUrl}" class="btn btn-sm btn-outline-light me-3" onclick="showLoader()">
+                    <i class="bi bi-arrow-left"></i>
+                </a>
+                <h4 class="mb-0 d-flex align-items-center">
+                    <i class="bi ${currentTheme.icon} me-2"></i>
+                    ${currentTheme.title}
+                </h4>
+            </div>
+            <div class="card-header-actions d-flex align-items-center gap-2">
+                ${actionButtons[initialPage] || ''}
+                 <button class="btn btn-sm" data-bs-toggle="modal" data-bs-target="#settings-modal" onclick="openSettings()"><i class="bi bi-gear-fill"></i></button>
+            </div>
+        </div>
+    `;
+    mainContainer.insertAdjacentHTML('afterbegin', moduleHeaderHtml);
+
+    // Now that the header is rendered, attach listeners to the search inputs
+    const stockSearch = document.getElementById('stock-search');
+    if (stockSearch) stockSearch.addEventListener('input', displayStockData);
+
+    const salesSearch = document.getElementById('sales-search');
+    if (salesSearch) salesSearch.addEventListener('input', () => { salesCurrentPage = 1; displaySalesHistory(); });
+    
+    const customerSearch = document.getElementById('customer-search');
+    if (customerSearch) customerSearch.addEventListener('input', () => { customersCurrentPage = 1; displayCustomerList(); });
+}
 
 // ===================================================
 // === 3. DATA LOADING AND DISPLAY FUNCTIONS ===
@@ -86,25 +151,27 @@ function loadInitialData() {
             return;
         }
 
-        // 1. Sales History
         allSalesData = response.salesData || [];
-        displaySalesHistory();
-
-        // 2. Customer Data
         allCustomerData = response.customerData || [];
         masterCustomerList = response.customerData || [];
-        populateDatalist('customer-options', masterCustomerList.map(c => c.name));
-        displayCustomerList();
-
-        // 3. Stock Data
         allStockData = response.stockData || { headers: [], data: [] };
-        displayStockData();
-
-        // 4. Dropdown Data
         masterProductList = response.productList || [];
+        
+        populateDatalist('customer-options', masterCustomerList.map(c => c.name));
         populateDatalist('product-options', masterProductList.map(p => p.displayValue));
         populateSelect('salesperson', response.employeeList || []);
 
+        // Activate the correct section and display its data
+        const section = document.getElementById(`${initialPage}-section`);
+        if (section) {
+            document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+            section.classList.add("active");
+        }
+        
+        if (initialPage === 'sales') displaySalesHistory();
+        if (initialPage === 'customers') displayCustomerList();
+        if (initialPage === 'stock') displayStockData();
+        
     }).withFailureHandler(onFailure).getInitialData();
 }
 
