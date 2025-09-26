@@ -10,14 +10,8 @@ let allStockData = { headers: [], data: [] };
 let salesCurrentPage = 1, customersCurrentPage = 1;
 const ROWS_PER_PAGE = 10;
 let salesModalInstance, settingsModalInstance, customerModalInstance;
-
-// Form Elements (Declared early to prevent initialization errors)
-const salesForm = document.getElementById('salesForm');
-const salesSubmitBtn = document.getElementById('sales-submit-btn');
-const customerForm = document.getElementById('customerForm');
-const customerSubmitBtn = document.getElementById('customer-submit-btn');
-const salesFormDocId = document.getElementById('salesFormDocId');
-
+let customerForm, customerSubmitBtn;
+let salesForm, salesSubmitBtn, salesFormDocId;
 
 // ===================================================
 // === 2. INITIAL PAGE LOAD & EVENT LISTENERS SETUP ===
@@ -28,56 +22,23 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsModalInstance = new bootstrap.Modal(document.getElementById('settings-modal'));
     customerModalInstance = new bootstrap.Modal(document.getElementById('customer-form-modal'));
 
+    customerForm = document.getElementById('customerForm');
+    customerSubmitBtn = document.getElementById('customer-submit-btn');
+
+    salesForm = document.getElementById('salesForm');
+    salesSubmitBtn = document.getElementById('sales-submit-btn');
+    salesFormDocId = document.getElementById('salesFormDocId');  
+
     renderModuleHeader();
     loadInitialData();
     addSalesItemRow();
-    setupEventListeners();
-});
-
-window.addEventListener('load', () => {
-    // Initialize Bootstrap Modals
-    salesModalInstance = new bootstrap.Modal(document.getElementById('sales-form-modal'));
-    settingsModalInstance = new bootstrap.Modal(document.getElementById('settings-modal'));
-    customerModalInstance = new bootstrap.Modal(document.getElementById('customer-form-modal'));
-
-    // Load all initial data in a single server call
-    loadInitialData();
     
-    // Add the first item row to the sales form
-    addSalesItemRow();
-
-    // Setup all event listeners
-    setupEventListeners();
-});
-
-function setupEventListeners() {
-    // Tab navigation
-    document.getElementById('myTab').addEventListener('click', e => {
-        if (e.target.matches('.nav-link')) {
-            const tabName = e.target.getAttribute("data-tab");
-            const targetTabContentId = (tabName === 'sales') ? 'sales-section' : `${tabName}-section`;
-            document.querySelectorAll("#myTab .nav-link, .tab-content").forEach(el => el.classList.remove("active"));
-            e.target.classList.add("active");
-            document.getElementById(targetTabContentId).classList.add("active");
-        }
-    }); 
-
-    // Settings form submission
+    // Attach form submission listeners here
     document.getElementById("settings-form").addEventListener("submit", handleSettingsSubmit);
     document.getElementById('salesForm').addEventListener('submit', handleSalesSubmit);
     document.getElementById('customerForm').addEventListener('submit', handleCustomerSubmit);
+});
 
-    // Sales form submission
-    salesForm.addEventListener('submit', handleSalesSubmit);
-
-    // Customer form submission
-    customerForm.addEventListener('submit', handleCustomerSubmit);
-
-    // Search inputs
-    document.getElementById('sales-search').addEventListener('input', () => { salesCurrentPage = 1; displaySalesHistory(); });
-    document.getElementById('customer-search').addEventListener('input', () => { customersCurrentPage = 1; displayCustomerList(); });
-    document.getElementById('stock-search').addEventListener('input', displayStockData);
-}
 
 // ===================================================
 // === [NEW] DYNAMIC UI RENDERING ===
@@ -151,17 +112,23 @@ function loadInitialData() {
             return;
         }
 
+        // 1. Assign all data from the server response
         allSalesData = response.salesData || [];
         allCustomerData = response.customerData || [];
         masterCustomerList = response.customerData || [];
         allStockData = response.stockData || { headers: [], data: [] };
         masterProductList = response.productList || [];
         
+        // 2. NOW that we have data, render the correct header
+        renderHeader();
+
+        // 3. Populate dropdowns and other elements
         populateDatalist('customer-options', masterCustomerList.map(c => c.name));
         populateDatalist('product-options', masterProductList.map(p => p.displayValue));
         populateSelect('salesperson', response.employeeList || []);
+        addSalesItemRow(); // It's better to add the first row after setup
 
-        // Activate the correct section and display its data
+        // 4. Finally, display the content for the correct page
         const section = document.getElementById(`${initialPage}-section`);
         if (section) {
             document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
@@ -174,6 +141,7 @@ function loadInitialData() {
         
     }).withFailureHandler(onFailure).getInitialData();
 }
+
 
 function loadSalesHistory() {
     showLoader();
@@ -234,28 +202,40 @@ function displaySalesHistory() {
     });
 }
 
+// JavaScript.html
+
 function displayCustomerList() {
-    const searchTerm = document.getElementById('customer-search').value.toLowerCase();
+    const searchInput = document.getElementById('customer-search');
+    const searchTerm = searchInput ? searchInput.value.toLowerCase() : "";
     const filteredData = searchTerm ? allCustomerData.filter(c => c.name.toLowerCase().includes(searchTerm)) : allCustomerData;
     
     const tbody = document.getElementById('customerTableBody');
     tbody.innerHTML = '';
 
     if (filteredData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center">ไม่พบข้อมูลลูกค้า</td></tr>';
+        // [CHANGED] ปรับ colspan จาก 5 เป็น 4
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center">ไม่พบข้อมูลลูกค้า</td></tr>';
     } else {
         const paginatedData = filteredData.slice((customersCurrentPage - 1) * ROWS_PER_PAGE, customersCurrentPage * ROWS_PER_PAGE);
         paginatedData.forEach(customer => {
             const row = tbody.insertRow();
+            // [CHANGED] นำ <td> ของ customer.address ออกไป
             row.innerHTML = `
-                <td>${customer.id}</td><td>${customer.name}</td><td>${customer.tel}</td><td>${customer.address}</td>
+                <td>${customer.id}</td>
+                <td>${customer.name}</td>
+                <td>${customer.tel}</td>
                 <td class="text-end">
-                    <button class="btn btn-warning btn-sm" onclick='editCustomer(${JSON.stringify(customer)})'><i class="bi bi-pencil"></i></button> 
-                    <button class="btn btn-danger btn-sm" onclick="deleteCustomer('${customer.id}')"><i class="bi bi-trash"></i></button>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-warning" onclick='editCustomer(${JSON.stringify(customer)})'><i class="bi bi-pencil"></i></button> 
+                        <button class="btn btn-danger" onclick="deleteCustomer('${customer.id}')"><i class="bi bi-trash"></i></button>
+                    </div>
                 </td>`;
         });
     }
-    setupCustomerPagination(filteredData.length);
+    setupPagination('customer-pagination', customersCurrentPage, filteredData.length, (page) => {
+        customersCurrentPage = page;
+        displayCustomerList();
+    });
 }
 
 function displayStockData() {
@@ -365,10 +345,13 @@ function handleSalesSubmit(e) {
 
     const formData = {
         docId: salesFormDocId.value,
+        // [NEW] เพิ่ม customerId เข้าไปใน formData
+        customerId: document.getElementById('salesCustomerId').value,
         customerName: document.getElementById('salesCustomerName').value,
         customerTel: document.getElementById('salesCustomerTel').value,
         salesperson: document.getElementById('salesperson').value,
-        // ใช้ค่าที่ประกาศไว้ด้านบนและแปลงเป็นทศนิยม 2 ตำแหน่ง
+        traysSent: parseInt(document.getElementById('salesTraysSent').value) || 0,
+        traysReceived: parseInt(document.getElementById('salesTraysReceived').value) || 0,
         subtotal: parseFloat(subtotal.toFixed(2)),
         discount: parseFloat(discount.toFixed(2)),
         grandTotal: parseFloat(grandTotal.toFixed(2)),
@@ -403,7 +386,6 @@ function handleCustomerSubmit(e) {
         id: document.getElementById('customerId').value,
         name: document.getElementById('customerName').value,
         tel: document.getElementById('customerTel').value,
-        address: document.getElementById('customerAddress').value
     };
 
     const serverFunction = customerData.id ? 'updateCustomer' : 'addCustomer';
@@ -539,6 +521,8 @@ function checkStock(inputElement) {
 
 function checkAllRowsStockValidity() {
     let isAnyRowInvalid = false;
+    const isUpdate = !!salesFormDocId.value; // ตรวจสอบว่าเป็นโหมด "แก้ไข" หรือไม่
+
     document.getElementById('salesItemTableBody').querySelectorAll('tr').forEach(row => {
         const productNameInput = row.querySelector('[name="itemName"]');
         const quantityInput = row.querySelector('[name="quantity"]');
@@ -551,7 +535,15 @@ function checkAllRowsStockValidity() {
         }
 
         const quantitySold = (parseFloat(quantityInput.value) || 0) * (parseFloat(unitSelect.value) || 1);
-        const stockAvailable = product.stockCentral;
+        
+        // --- ✨ นี่คือ Logic ใหม่ที่ฉลาดขึ้น ✨ ---
+        let stockAvailable = product.stockCentral;
+        if (isUpdate) {
+            // ถ้าเป็นการแก้ไข ให้นำ "ยอดขายเดิม" ของรายการนี้บวกกลับเข้าไปในสต็อกชั่วคราวเพื่อตรวจสอบ
+            const originalBaseQuantity = parseFloat(row.dataset.originalBaseQuantity) || 0;
+            stockAvailable += originalBaseQuantity;
+        }
+        // --- จบ Logic ใหม่ ---
 
         if (quantitySold > stockAvailable) {
             quantityInput.classList.add('is-invalid');
@@ -563,52 +555,51 @@ function checkAllRowsStockValidity() {
     salesSubmitBtn.disabled = isAnyRowInvalid;
 }
 
-/**
- * [UPDATED] ฟังก์ชันสำหรับเตรียมฟอร์มเพื่อการแก้ไข
- * @param {object} record - ข้อมูลบิลขายที่ต้องการแก้ไข
- */
 function editSale(record) {
-    resetSalesForm(); // เริ่มจากการล้างฟอร์มก่อน
-
-    // 1. ตั้งค่า Title, ปุ่ม, และ Doc ID
+    resetSalesForm(); 
     document.getElementById('salesFormModalLabel').innerText = `แก้ไขเอกสาร: ${record.docId}`;
     salesFormDocId.value = record.docId;
+    
+    document.getElementById('salesCustomerId').value = record.customerId || '';
     salesSubmitBtn.innerText = 'อัปเดตข้อมูล';
-    salesSubmitBtn.classList.remove('btn-primary');
-    salesSubmitBtn.classList.add('btn-warning');
+    salesSubmitBtn.classList.replace('btn-primary', 'btn-warning');
 
-    // 2. [FIXED] เติมข้อมูลลูกค้าและพนักงานขาย และทำให้ช่องพนักงานขายแก้ไขไม่ได้
     document.getElementById('salesCustomerName').value = record.customerName;
     document.getElementById('salesCustomerTel').value = record.customerTel;
     document.getElementById('salesperson').value = record.salesperson;
-    document.getElementById('salesperson').disabled = true; // << บรรทัดนี้คือส่วนที่เพิ่มเข้ามา
+    document.getElementById('salesperson').disabled = true;
     document.getElementById('discount').value = record.discount;
+    document.getElementById('salesTraysSent').value = record.traysSent || 0;
+    document.getElementById('salesTraysReceived').value = record.traysReceived || 0;
 
-    // 3. สร้างรายการสินค้าเดิมขึ้นมาใหม่
     const tbody = document.getElementById('salesItemTableBody');
     tbody.innerHTML = ''; 
-    record.items.forEach(item => {
-        addSalesItemRow();
-        const newRow = tbody.rows[tbody.rows.length - 1];
-        
-        const product = masterProductList.find(p => p.productName === item.name);
-        if (product) {
-            newRow.querySelector('[name="itemName"]').value = product.displayValue;
-        }
 
-        newRow.querySelector('[name="quantity"]').value = item.quantity;
-        newRow.querySelector('[name="price"]').value = item.price;
-        
-        const unitSelect = newRow.querySelector('[name="unit"]');
-        for (let option of unitSelect.options) {
-            if (option.text === item.unitName) {
-                option.selected = true;
-                break;
+    if (record.items) {
+        record.items.forEach(item => {
+            addSalesItemRow();
+            const newRow = tbody.rows[tbody.rows.length - 1];
+            
+            // [IMPROVED] เพิ่ม data attribute เพื่อเก็บ "จำนวนเดิม" ไว้กับแถว
+            newRow.dataset.originalBaseQuantity = item.baseQuantity || 0;
+
+            const product = masterProductList.find(p => p.productName === item.name);
+            if (product) {
+                newRow.querySelector('[name="itemName"]').value = product.displayValue;
             }
-        }
-    });
+            newRow.querySelector('[name="quantity"]').value = item.quantity;
+            newRow.querySelector('[name="price"]').value = item.price;
+            
+            const unitSelect = newRow.querySelector('[name="unit"]');
+            for (let option of unitSelect.options) {
+                if (option.text === item.unitName) {
+                    option.selected = true;
+                    break;
+                }
+            }
+        });
+    }
 
-    // 4. คำนวณยอดรวมและเปิด Modal
     calculateTotals();
     checkAllRowsStockValidity();
     salesModalInstance.show();
@@ -617,6 +608,7 @@ function editSale(record) {
 function resetSalesForm() {
     salesForm.reset();
     salesFormDocId.value = '';
+    document.getElementById('salesCustomerId').value = '';
     document.getElementById('salesCustomerTel').value = '';
     document.getElementById('discount').value = '0';
     document.getElementById('salesItemTableBody').innerHTML = '';
@@ -645,7 +637,6 @@ function editCustomer(customer) {
     document.getElementById('customerId').value = customer.id;
     document.getElementById('customerName').value = customer.name;
     document.getElementById('customerTel').value = customer.tel;
-    document.getElementById('customerAddress').value = customer.address;
     document.getElementById('customer-modal-title').innerText = `แก้ไขข้อมูล: ${customer.name}`;
     customerSubmitBtn.innerHTML = '<i class="bi bi-pencil-square"></i> อัปเดตข้อมูล';
     customerModalInstance.show();
@@ -774,7 +765,14 @@ function populateSelect(selectId, items) {
 
 function handleCustomerSelect(customerName) {
     const customer = masterCustomerList.find(c => c.name === customerName);
-    document.getElementById('salesCustomerTel').value = customer ? (customer.tel || '') : '';
+    // [CHANGED] นอกจากจะใส่เบอร์โทรแล้ว ให้ใส่ ID ลงใน hidden input ด้วย
+    if (customer) {
+        document.getElementById('salesCustomerTel').value = customer.tel || '';
+        document.getElementById('salesCustomerId').value = customer.id || '';
+    } else {
+        document.getElementById('salesCustomerTel').value = '';
+        document.getElementById('salesCustomerId').value = '';
+    }
 }
 
 function openSettings() {
@@ -979,5 +977,133 @@ function getSalesPrintHtml(rec, info) {
         </div>
     `;
 }
+
+/**
+ * ฟังก์ชันหลักในการเลือก Render Header ตามหน้าปัจจุบัน
+ */
+function renderHeader() {
+    const placeholder = document.getElementById('dynamic-header-placeholder');
+    if (!placeholder) return;
+
+    if (initialPage === 'stock') {
+        renderStockHeader(placeholder);
+    } else {
+        renderGenericHeader(placeholder);
+    }
+
+    // Attach listeners to newly created search inputs
+    const stockSearch = document.getElementById('stock-search');
+    if (stockSearch) stockSearch.addEventListener('input', displayStockData);
+
+    const salesSearch = document.getElementById('sales-search');
+    if (salesSearch) salesSearch.addEventListener('input', () => { salesCurrentPage = 1; displaySalesHistory(); });
+    
+    const customerSearch = document.getElementById('customer-search');
+    if (customerSearch) customerSearch.addEventListener('input', () => { customersCurrentPage = 1; displayCustomerList(); });
+}
+
+/**
+ * Render Header สำหรับหน้า Stock โดยเฉพาะ
+ * @param {HTMLElement} placeholder - The element to inject the header into.
+ */
+function renderStockHeader(placeholder) {
+    // --- คุณสามารถปรับแก้ค่านี้ได้ ---
+    const LOW_STOCK_THRESHOLD = 10; // สินค้าที่เหลือน้อยกว่าหรือเท่ากับ 10 ชิ้นจะนับเป็น "ใกล้หมด"
+    // --------------------------------
+
+    const stockLevelColumnIndex = 2; // Index ของคอลัมน์ที่เก็บจำนวนสต็อก (เริ่มนับจาก 0)
+    let total = 0, lowStock = 0, outOfStock = 0;
+
+    if (allStockData && allStockData.data && allStockData.data.length > 0) {
+        total = allStockData.data.length;
+        allStockData.data.forEach(row => {
+            const stockValue = parseFloat(String(row[stockLevelColumnIndex]).replace(/,/g, ''));
+            if (!isNaN(stockValue)) {
+                if (stockValue <= 0) {
+                    outOfStock++;
+                } else if (stockValue <= LOW_STOCK_THRESHOLD) {
+                    lowStock++;
+                }
+            }
+        });
+    }
+
+    const now = new Date();
+    const year = now.getFullYear() + 543;
+    const dateOptions = { weekday: 'long', month: 'long', day: 'numeric' };
+    const formattedDate = now.toLocaleDateString('th-TH', dateOptions) + ` พ.ศ. ${year}`;
+
+    const headerHtml = `
+    <div class="dashboard-header-card d-flex justify-content-between align-items-center">
+        <div class="header-title-section">
+            <h4><i class="bi bi-box-seam me-2"></i>สต็อก&คลังสินค้า</h4>
+            <p>ข้อมูล ณ ${formattedDate}</p>
+        </div>
+        <div class="header-metrics-section">
+            <div class="metric-item">
+                <div class="metric-value">${total.toLocaleString('en-US')}</div>
+                <div class="metric-label">ทั้งหมด</div>
+            </div>
+            <div class="metric-item">
+                <div class="metric-value text-warning">${lowStock.toLocaleString('en-US')}</div>
+                <div class="metric-label">ใกล้หมด</div>
+            </div>
+            <div class="metric-item">
+                <div class="metric-value text-danger">${outOfStock.toLocaleString('en-US')}</div>
+                <div class="metric-label">ของหมด</div>
+            </div>
+            <div class="vr mx-3"></div>
+            <div class="header-actions d-flex align-items-center gap-2">
+                 <input type="text" id="stock-search" class="form-control form-control-sm" placeholder="ค้นหาสินค้า...">
+                 <button class="btn btn-light" data-bs-toggle="modal" data-bs-target="#settings-modal" onclick="openSettings()"><i class="bi bi-gear-fill"></i></button>
+            </div>
+        </div>
+    </div>`;
+    placeholder.innerHTML = headerHtml;
+}
+
+/**
+ * Render Header แบบทั่วไปสำหรับหน้า Sales และ Customers
+ * @param {HTMLElement} placeholder - The element to inject the header into.
+ */
+function renderGenericHeader(placeholder) {
+    const moduleThemes = {
+        'sales':     { color: '#22c55e', icon: 'bi-receipt-cutoff', title: 'ประวัติการขาย' },
+        'customers': { color: '#8b5cf6', icon: 'bi-people-fill', title: 'จัดการลูกค้า' }
+    };
+    const currentTheme = moduleThemes[initialPage] || { color: '#6c757d', icon: 'bi-question-circle', title: 'Undefined Page' };
+
+    const actionButtons = {
+        'sales': `
+            <input type="text" id="sales-search" class="form-control form-control-sm" placeholder="ค้นหา...">
+            <button type="button" class="btn btn-sm" data-bs-toggle="modal" data-bs-target="#sales-form-modal">
+               <i class="bi bi-plus-circle-fill"></i> สร้างเอกสารขาย
+            </button>`,
+        'customers': `
+            <input type="text" id="customer-search" class="form-control form-control-sm" placeholder="ค้นหาชื่อลูกค้า...">
+            <button type="button" class="btn btn-sm" data-bs-toggle="modal" data-bs-target="#customer-form-modal" onclick="resetCustomerForm()">
+                <i class="bi bi-person-plus-fill"></i> เพิ่มลูกค้าใหม่
+            </button>`
+    };
+
+    const headerHtml = `
+    <div class="module-header-sticky d-flex justify-content-between align-items-center mb-4 px-4 py-3" 
+         style="background-color: ${currentTheme.color}; color: white; border-radius: 0.75rem;">
+        <div class="d-flex align-items-center">
+            <a href="${dashboardUrl}" class="btn btn-sm btn-outline-light me-3" onclick="showLoader()">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <h4 class="mb-0 d-flex align-items-center">
+                <i class="bi ${currentTheme.icon} me-2"></i> ${currentTheme.title}
+            </h4>
+        </div>
+        <div class="card-header-actions d-flex align-items-center gap-2">
+            ${actionButtons[initialPage] || ''}
+            <button class="btn btn-sm" data-bs-toggle="modal" data-bs-target="#settings-modal" onclick="openSettings()"><i class="bi bi-gear-fill"></i></button>
+        </div>
+    </div>`;
+    placeholder.innerHTML = headerHtml;
+} 
+
 
 </script>
