@@ -36,7 +36,15 @@
                   <input type="hidden" id="salesFormDocId">
                   <input type="hidden" id="salesCustomerId">
                     <div class="row mb-3">
-                        <div class="col-md-6"><label class="form-label">ชื่อลูกค้า</label><input type="text" id="salesCustomerName" class="form-control" list="customer-options" required oninput="handleCustomerSelect(this.value)"></div>
+<div class="col-md-6">
+    <label class="form-label">ชื่อลูกค้า</label>
+    <div class="input-group">
+        <input type="text" id="salesCustomerName" class="form-control" list="customer-options" required oninput="handleCustomerSelect(this.value)" placeholder="ค้นหาหรือเลือกลูกค้า...">
+        <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#customer-form-modal" onclick="resetCustomerForm()">
+            <i class="bi bi-person-plus-fill"></i>
+        </button>
+    </div>
+</div>
                         <div class="col-md-6"><label class="form-label">เบอร์ติดต่อ</label><input type="text" id="salesCustomerTel" class="form-control" readonly></div>
                     </div>
                     <div class="row mb-3">
