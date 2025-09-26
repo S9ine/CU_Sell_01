@@ -122,7 +122,10 @@ body { background-color: var(--light-gray); font-size: 15px; }
     padding: 1rem 1.5rem;
     box-shadow: 0 4px 12px rgba(0,0,0,0.06);
     border: 1px solid #e9ecef;
-    margin-bottom: 1.5rem;
+    margin-bottom: 2.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 .header-title-section h4 {
     font-weight: 700;
@@ -130,8 +133,8 @@ body { background-color: var(--light-gray); font-size: 15px; }
     margin-bottom: 0.25rem;
     font-size: 1.5rem;
 }
-.header-title-section h4 .bi-box-seam {
-    color: #0d6efd;
+.header-title-section h4 .bi {
+    color: #22c55e; /* สีเขียวสำหรับไอคอนการขาย */
 }
 .header-title-section p {
     font-size: 0.9rem;
@@ -156,8 +159,8 @@ body { background-color: var(--light-gray); font-size: 15px; }
     color: #6c757d;
     font-weight: 500;
 }
-.metric-value.text-warning { color: #f59e0b !important; }
-.metric-value.text-danger { color: #ef4444 !important; }
+.metric-value.text-primary { color: #0d6efd !important; }
+.metric-value.text-info { color: #0dcaf0 !important; }
 
 .header-actions .btn {
     background-color: #f1f5f9;
