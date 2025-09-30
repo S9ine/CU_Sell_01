@@ -3,7 +3,7 @@
 // ===================================================
 const CONFIG = {
   salesSheetName: "ข้อมูลการขาย",
-  logSheetName: "Log", // [NEW] เพิ่มชีตสำหรับบันทึก Log
+  logSheetName: "Log",
   customer: {
     sheetId: "19MvkCOZfUuQKjaeCYHKV5UTgSv-09PqpgIiTbX6qKWk",
     sheetName: "Contacts"
@@ -18,31 +18,31 @@ const CONFIG = {
 };
 
 /**
- * [NEW] ฟังก์ชันกลางสำหรับบันทึก Log การทำงาน
+ * [IMPROVED] เพิ่มรายละเอียด Log ให้มากขึ้น
  * @param {string} emoji - Emoji for the log entry.
  * @param {string} details - The detailed log message.
+ * @param {string} context - Optional context like DocID or Customer Name.
  */
-function _logActivity_(emoji, details) {
+function _logActivity_(emoji, details, context = '') {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const logSheet = ss.getSheetByName(CONFIG.logSheetName) || ss.insertSheet(CONFIG.logSheetName);
-    
-    // ตั้งค่า Header และรูปแบบของชีต Log ถ้าเป็นชีตใหม่
+
     if (logSheet.getLastRow() === 0) {
-      logSheet.appendRow(['Timestamp', 'User', 'Activity']);
+      logSheet.appendRow(['Timestamp', 'User', 'Activity', 'Context']);
       logSheet.setFrozenRows(1);
       logSheet.getRange("A:A").setNumberFormat("yyyy-mm-dd hh:mm:ss");
       logSheet.getRange("C:C").setWrap(true);
       logSheet.setColumnWidth(1, 150);
       logSheet.setColumnWidth(2, 200);
       logSheet.setColumnWidth(3, 500);
+      logSheet.setColumnWidth(4, 200);
     }
-    
+
     const user = Session.getActiveUser().getEmail() || 'Unknown';
     const timestamp = new Date();
-    logSheet.appendRow([timestamp, user, `${emoji} ${details}`]);
+    logSheet.appendRow([timestamp, user, `${emoji} ${details}`, context]);
   } catch (e) {
-    // การบันทึก Log ไม่ควรขัดขวางการทำงานหลัก
     console.error("Failed to log activity: " + e.message);
   }
 }
@@ -209,36 +209,81 @@ function deleteCustomer(customerId) {
 // === 3. ฟังก์ชันจัดการข้อมูลการขาย (Sales Functions) ===
 // ===================================================
 function saveSalesData(formData) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000); // รอ Lock สูงสุด 20 วินาที
+
   try {
+    // [NEW] ตรวจสอบสต็อกใน Backend อีกครั้งเพื่อความปลอดภัย
+    const stockCheck = _validateStockAvailability(formData.items);
+    if (!stockCheck.isValid) {
+      throw new Error(`สต็อกไม่พอสำหรับ: ${stockCheck.insufficientItems.join(', ')}`);
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const salesSheet = ss.getSheetByName(CONFIG.salesSheetName) || ss.insertSheet(CONFIG.salesSheetName);
     const currentUser = Session.getActiveUser().getEmail() || 'Unknown';
     const timestamp = new Date();
     const invoiceId = generateInvoiceId_(salesSheet);
+
     if (salesSheet.getLastRow() === 0) {
       salesSheet.appendRow(['เลขที่เอกสาร', 'วันที่ขาย', 'รหัสลูกค้า', 'ชื่อลูกค้า', 'เบอร์ติดต่อ', 'พนักงานขาย', 'ยอดรวม', 'ส่วนลด', 'ยอดสุทธิ', 'แผงไข่ส่ง', 'แผงไข่รับ', 'ชื่อสินค้า', 'จำนวน', 'หน่วย', 'ราคาต่อหน่วยย่อย', 'ราคารวม', 'จำนวนหน่วยย่อย', 'ผู้บันทึก', 'เวลาที่บันทึก']);
     }
+
     const recordsToSave = formData.items.map((item, index) => {
       const commonData = index === 0 ? [ invoiceId, timestamp, formData.customerId, formData.customerName, "'" + formData.customerTel, formData.salesperson, formData.subtotal, formData.discount, formData.grandTotal, formData.traysSent, formData.traysReceived ] : Array(11).fill('');
       return [...commonData, item.name, item.quantity, item.unitName, item.price, item.total, item.baseQuantity, currentUser, timestamp];
     });
+
     if (recordsToSave.length > 0) {
       salesSheet.getRange(salesSheet.getLastRow() + 1, 1, recordsToSave.length, recordsToSave[0].length).setValues(recordsToSave);
+      
+      // ทำ Operation สำคัญหลังจากบันทึกชีตสำเร็จ
       updateStock_(formData.items, 'DEDUCT');
       if (formData.customerId) {
         _updateTrayBalance_(formData.customerId, formData.customerName, formData.traysSent, formData.traysReceived);
-      } else {
-        console.warn(`Customer ID was missing for "${formData.customerName}". Tray stock not updated.`);
       }
-      _logActivity_('🧾', `สร้างเอกสารขาย #${invoiceId} ให้กับ "${formData.customerName}" (${formData.items.length} รายการ)`);
+      
+      _logActivity_('🧾', `สร้างเอกสารขาย #${invoiceId} (${formData.items.length} รายการ)`, `ลูกค้า: ${formData.customerName}`);
       return { success: true, docId: invoiceId, message: "บันทึกข้อมูลการขายสำเร็จ" };
     } else {
       throw new Error("ไม่พบรายการสินค้าที่จะบันทึก");
     }
-  } catch (e) { console.error("saveSalesData Error: " + e.message); return { success: false, message: `เกิดข้อผิดพลาด: ${e.message}` };
+  } catch (e) {
+    console.error("saveSalesData Error: " + e.message, e.stack);
+    return { success: false, message: `เกิดข้อผิดพลาด: ${e.message}` };
+  } finally {
+    lock.releaseLock(); // ปลด Lock ทุกครั้ง
   }
 }
 
+/**
+ * [NEW] ฟังก์ชันสำหรับตรวจสอบสต็อกใน Backend
+ * @param {Array} items - รายการสินค้าที่ต้องการตรวจสอบ
+ * @returns {{isValid: boolean, insufficientItems: Array<string>}}
+ */
+function _validateStockAvailability(items) {
+  try {
+    const { productList } = _fetchAndProcessStockData();
+    const stockMap = new Map(productList.map(p => [p.productName, p.stockCentral]));
+    let insufficientItems = [];
+
+    items.forEach(item => {
+      const availableStock = stockMap.get(item.name.trim()) || 0;
+      if (item.baseQuantity > availableStock) {
+        insufficientItems.push(`${item.name} (ต้องการ: ${item.baseQuantity}, มี: ${availableStock})`);
+      }
+    });
+
+    return {
+      isValid: insufficientItems.length === 0,
+      insufficientItems: insufficientItems
+    };
+  } catch (e) {
+    console.error("Stock Validation Error:", e.message);
+    // กรณีฉุกเฉิน ให้ถือว่าไม่ผ่านเพื่อความปลอดภัย
+    return { isValid: false, insufficientItems: ["เกิดข้อผิดพลาดในการตรวจสอบสต็อก"] };
+  }
+}
 
 function updateSale(formData) {
   try {
@@ -282,62 +327,40 @@ function deleteSaleById(docId) {
     return { success: false, message: "ไม่พบเลขที่เอกสาร" };
   }
   
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const salesSheet = ss.getSheetByName(CONFIG.salesSheetName);
     if (!salesSheet) throw new Error(`ไม่พบชีต '${CONFIG.salesSheetName}'`);
     
-    const dataRange = salesSheet.getDataRange();
-    const allData = dataRange.getValues();
-    const header = allData.shift();
-
-    let rowsToDeleteIndices = [];
-    let saleDataToReturn = { items: [] };
-    let isFirstRowOfBill = true;
-
-    allData.forEach((row, index) => {
-      const currentRowDocId = row[0].toString().trim();
-      if (currentRowDocId === docId || (rowsToDeleteIndices.length > 0 && currentRowDocId === "")) {
-        rowsToDeleteIndices.push(index + 2); 
-
-        if (isFirstRowOfBill) {
-            isFirstRowOfBill = false;
-            saleDataToReturn.customerId = row[2];
-            saleDataToReturn.customerName = row[3];
-            saleDataToReturn.traysSent = parseInt(row[9]) || 0;
-            saleDataToReturn.traysReceived = parseInt(row[10]) || 0;
-        }
-
-        const productName = row[11];
-        const baseQuantity = parseFloat(row[16]);
-        if (productName && !isNaN(baseQuantity)) {
-          saleDataToReturn.items.push({ name: productName, baseQuantity: baseQuantity });
-        }
-      }
-    });
-
-    if (rowsToDeleteIndices.length > 0) {
-      if (saleDataToReturn.items.length > 0) {
-        updateStock_(saleDataToReturn.items, 'RETURN');
-      }
-
-      if (saleDataToReturn.customerId) {
-        _updateTrayBalance_(saleDataToReturn.customerId, saleDataToReturn.customerName, -saleDataToReturn.traysSent, -saleDataToReturn.traysReceived);
-      }
-
-      for (let i = rowsToDeleteIndices.length - 1; i >= 0; i--) {
-        salesSheet.deleteRow(rowsToDeleteIndices[i]);
-      }
-      
-      _logActivity_('🗑️', `ลบเอกสารขาย #${docId} ของ "${saleDataToReturn.customerName}"`);
-      return { success: true, message: `ลบเอกสาร ${docId} และคืนสต็อกสำเร็จ` };
-    } else {
-      return { success: false, message: `ไม่พบเอกสาร ${docId} ในระบบ` };
+    // ดึงข้อมูลเก่าเพื่อใช้คืนสต็อก (Refactored)
+    const oldSaleData = getSaleRecordByDocId_(salesSheet, docId);
+    if (oldSaleData.items.length === 0) {
+      return { success: false, message: `ไม่พบข้อมูลเอกสาร ${docId}` };
+    }
+    
+    // 1. คืนสต็อกและแผงไข่ก่อน
+    if (oldSaleData.items.length > 0) {
+      updateStock_(oldSaleData.items, 'RETURN');
+    }
+    if (oldSaleData.customerId) {
+      _updateTrayBalance_(oldSaleData.customerId, oldSaleData.customerName, -oldSaleData.traysSent, -oldSaleData.traysReceived);
     }
 
+    // 2. ลบแถวในชีต
+    deleteRowsByDocId_(salesSheet, docId);
+      
+    const logDetails = `ลบเอกสารขาย #${docId} และคืน ${oldSaleData.items.length} รายการสู่สต็อก`;
+    _logActivity_('🗑️', logDetails, `ลูกค้า: ${oldSaleData.customerName}`);
+    return { success: true, message: `ลบเอกสาร ${docId} และคืนสต็อกสำเร็จ` };
+
   } catch (e) {
-    console.error("deleteSaleById Error for docId " + docId + ": " + e.message);
+    console.error("deleteSaleById Error for docId " + docId + ": " + e.message, e.stack);
     return { success: false, message: "เกิดข้อผิดพลาดขณะลบ: " + e.message };
+  } finally {
+    lock.releaseLock();
   }
 }
 
