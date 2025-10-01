@@ -9,7 +9,7 @@ const AppState = {
     salesCurrentPage: 1, customersCurrentPage: 1, isSalesFormDirty: false,
 };
 const ROWS_PER_PAGE = 10;
-let salesModalInstance, settingsModalInstance, customerModalInstance;
+let salesModalInstance, settingsModalInstance, customerModalInstance, salesDetailsModalInstance;
 let customerForm, customerSubmitBtn, salesForm, salesSubmitBtn, salesFormDocId;
 
 // ===================================================
@@ -21,6 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
     salesModalInstance = new bootstrap.Modal(salesModalElement);
     settingsModalInstance = new bootstrap.Modal(document.getElementById('settings-modal'));
     customerModalInstance = new bootstrap.Modal(document.getElementById('customer-form-modal'));
+    // [NEW] Initialize the new sales details modal
+    salesDetailsModalInstance = new bootstrap.Modal(document.getElementById('sales-details-modal'));
+
 
     customerForm = document.getElementById('customerForm');
     customerSubmitBtn = document.getElementById('customer-submit-btn');
@@ -190,7 +193,14 @@ function loadCustomerList() {
 
 function displaySalesHistory() {
     const searchTerm = document.getElementById('sales-search').value.toLowerCase();
-    const filteredData = searchTerm ? AppState.allSalesData.filter(rec => rec.docId.toLowerCase().includes(searchTerm) || rec.customerName.toLowerCase().includes(searchTerm) || rec.salesperson.toLowerCase().includes(searchTerm)) : AppState.allSalesData;
+    const filteredData = searchTerm 
+        ? AppState.allSalesData.filter(rec => 
+              rec.docId.toLowerCase().includes(searchTerm) || 
+              rec.customerName.toLowerCase().includes(searchTerm) || 
+              rec.salesperson.toLowerCase().includes(searchTerm) ||
+              (rec.employeeId && rec.employeeId.toLowerCase().includes(searchTerm))
+          ) 
+        : AppState.allSalesData;
     
     const tbody = document.getElementById('salesHistoryTableBody');
     tbody.innerHTML = '';
@@ -200,15 +210,24 @@ function displaySalesHistory() {
     } else {
         const paginatedData = filteredData.slice((AppState.salesCurrentPage - 1) * ROWS_PER_PAGE, AppState.salesCurrentPage * ROWS_PER_PAGE);
         paginatedData.forEach(rec => {
-            const itemsHtml = rec.items.map(i => `<li>${i.name} (${i.quantity} ${i.unitName})</li>`).join('');
             const row = tbody.insertRow();
             row.innerHTML = `
                 <td>${rec.docId}</td>
                 <td>${rec.date}</td>
-                <td><div>${rec.customerName}</div>
-                <small class="text-muted">${rec.customerTel || ''}</small></td>
-                <td>${rec.salesperson}</td><td><ul class="list-unstyled mb-0 small">${itemsHtml}</ul></td>
+                <td>
+                    <div>${rec.customerName}</div>
+                    <small class="text-muted">${rec.customerTel || ''}</small>
+                </td>
+                <td>
+                    <div>${rec.salesperson}</div>
+                    <small class="text-muted">${rec.employeeId || ''}</small>
+                </td>
                 <td class="text-end"><b>฿ ${rec.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-outline-primary" onclick='showSaleDetailsModal(${JSON.stringify(rec)})'>
+                        <i class="bi bi-list-ul"></i> ดูรายการ
+                    </button>
+                </td>
                 <td>
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-warning" onclick='editSale(${JSON.stringify(rec)})'><i class="bi bi-pencil-fill"></i></button>
@@ -222,6 +241,28 @@ function displaySalesHistory() {
         AppState.salesCurrentPage = page;
         displaySalesHistory();
     });
+}
+
+// [NEW] Function to show sale details in a modal
+function showSaleDetailsModal(record) {
+    document.getElementById('details-modal-title').innerText = `รายละเอียดเอกสาร: ${record.docId}`;
+    
+    const tableBody = document.getElementById('sales-details-table-body');
+    tableBody.innerHTML = record.items.map(i => `
+        <tr>
+            <td>${i.name}</td>
+            <td class="text-center">${i.quantity}</td>
+            <td>${i.unitName}</td>
+            <td class="text-end">${i.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td class="text-end">${i.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        </tr>
+    `).join('');
+    
+    document.getElementById('details-modal-subtotal').innerText = `฿ ${record.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('details-modal-discount').innerText = `฿ ${record.discount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('details-modal-grandtotal').innerText = `฿ ${record.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    salesDetailsModalInstance.show();
 }
 
 function displayCustomerList() {
@@ -327,6 +368,9 @@ function handleSalesSubmit(e) {
     const subtotal = parseFloat(document.getElementById('subtotal').innerText.replace(/[฿,]/g, ''));
     const discount = parseFloat(document.getElementById('discount').value.replace(/,/g, '')) || 0;
     const grandTotal = parseFloat(document.getElementById('grandTotal').innerText.replace(/[฿,]/g, ''));
+    
+    const salespersonSelect = document.getElementById('salesperson');
+    const selectedEmployeeOption = salespersonSelect.options[salespersonSelect.selectedIndex];
 
     const items = Array.from(document.getElementById('salesItemTableBody').rows).map(row => {
         const quantity = parseFloat(row.querySelector('[name="quantity"]').value);
@@ -359,7 +403,8 @@ function handleSalesSubmit(e) {
         customerId: document.getElementById('salesCustomerId').value,
         customerName: document.getElementById('salesCustomerName').value,
         customerTel: document.getElementById('salesCustomerTel').value,
-        salesperson: document.getElementById('salesperson').value,
+        employeeId: selectedEmployeeOption.dataset.id,
+        salesperson: selectedEmployeeOption.value,
         traysSent: parseInt(document.getElementById('salesTraysSent').value) || 0,
         traysReceived: parseInt(document.getElementById('salesTraysReceived').value) || 0,
         subtotal: parseFloat(subtotal.toFixed(2)),
@@ -376,8 +421,9 @@ function handleSalesSubmit(e) {
             salesSubmitBtn.disabled = false;
             if (response.success) {
                 showToast(response.message, 'success');
-                salesModalInstance.hide();
+                // [FIX] Call resetSalesForm() before hide() to prevent confirmation dialog
                 resetSalesForm();
+                salesModalInstance.hide();
                 loadInitialData(); 
             } else {
                 showToast(response.message, 'danger');
@@ -610,8 +656,12 @@ function editSale(record) {
 
     document.getElementById('salesCustomerName').value = record.customerName;
     document.getElementById('salesCustomerTel').value = record.customerTel;
-    document.getElementById('salesperson').value = record.salesperson;
-    document.getElementById('salesperson').disabled = true;
+    
+    // Set salesperson dropdown by value (name)
+    const salespersonSelect = document.getElementById('salesperson');
+    salespersonSelect.value = record.salesperson;
+    salespersonSelect.disabled = true;
+    
     document.getElementById('discount').value = record.discount;
     document.getElementById('salesTraysSent').value = record.traysSent || 0;
     document.getElementById('salesTraysReceived').value = record.traysReceived || 0;
@@ -735,8 +785,9 @@ function populateSelect(selectId, items) {
     if (items) {
         items.forEach(item => {
             const opt = document.createElement("option");
-            opt.value = item; 
-            opt.textContent = item;
+            opt.value = item.name; 
+            opt.textContent = `${item.id} - ${item.name}`;
+            opt.dataset.id = item.id;
             select.appendChild(opt);
         });
     }
@@ -900,7 +951,7 @@ function getSalesPrintHtml(rec, info) {
                 <table>
                     <tr><td style="width:15%;"><strong>ลูกค้า:</strong></td><td>${rec.customerName}</td></tr>
                     <tr><td><strong>ติดต่อ:</strong></td><td>${rec.customerTel || '-'}</td></tr>
-                    <tr><td><strong>พนักงานขาย:</strong></td><td>${rec.salesperson}</td></tr>
+                    <tr><td><strong>พนักงานขาย:</strong></td><td>${rec.employeeId} - ${rec.salesperson}</td></tr>
                 </table>
             </div>
             <table class="items-table">
@@ -1059,5 +1110,4 @@ function renderGenericHeader(placeholder) {
     </div>`;
     placeholder.innerHTML = headerHtml;
 } 
-
 </script>
