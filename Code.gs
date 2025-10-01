@@ -291,32 +291,49 @@ function updateSale(formData) {
     if (!docId) throw new Error("ไม่พบเลขที่เอกสารสำหรับการอัปเดต");
 
     const oldSaleData = getSaleRecordByDocId_(salesSheet, docId);
+    // เพิ่มการตรวจสอบให้ดีขึ้นว่าหาข้อมูลเจอจริง ๆ
+    if (!oldSaleData || oldSaleData.items.length === 0) {
+        throw new Error(`ไม่พบข้อมูลเอกสาร ${docId} ที่จะอัปเดต`);
+    }
+
+    // คืนสต็อกและแผงไข่ (เหมือนเดิม)
     if (oldSaleData.items.length > 0) {
       updateStock_(oldSaleData.items, 'RETURN');
-      if (oldSaleData.customerId) {
-        _updateTrayBalance_(oldSaleData.customerId, oldSaleData.customerName, -oldSaleData.traysSent, -oldSaleData.traysReceived);
-      }
+    }
+    if (oldSaleData.customerId) {
+      _updateTrayBalance_(oldSaleData.customerId, oldSaleData.customerName, -oldSaleData.traysSent, -oldSaleData.traysReceived);
     }
     
+    // หักสต็อกและอัปเดตแผงไข่ใหม่ (เหมือนเดิม)
     updateStock_(formData.items, 'DEDUCT');
     if(formData.customerId) {
       _updateTrayBalance_(formData.customerId, formData.customerName, formData.traysSent, formData.traysReceived);
     }
 
     deleteRowsByDocId_(salesSheet, docId);
+    
     const currentUser = Session.getActiveUser().getEmail() || 'Unknown';
-    const saleDate = oldSaleData.date || new Date(); // <-- ✨ [แก้ไข] ใช้วันที่เดิม, ถ้าไม่พบให้ใช้วันที่ปัจจุบันเป็นค่าสำรอง
+    // ✨ [แก้ไข] เปลี่ยนชื่อตัวแปรจาก saleDate เป็น originalSaleDate เพื่อความชัดเจน
+    const originalSaleDate = oldSaleData.date; 
+
     const recordsToSave = formData.items.map((item, index) => {
-      const commonData = index === 0 ? [ docId, saleDate, formData.customerId, formData.customerName, "'" + formData.customerTel, formData.salesperson, formData.subtotal, formData.discount, formData.grandTotal, formData.traysSent, formData.traysReceived ] : Array(11).fill('');
-      // ✨ [แก้ไข] เปลี่ยนจาก timestamp เป็น new Date() เพื่อให้เวลาที่แก้ไข update
+      // ✨ [แก้ไข] เพิ่ม employeeId เข้าไปใน commonData ให้ตรงกับ saveSalesData
+      const commonData = index === 0 
+        ? [ docId, originalSaleDate, formData.customerId, formData.customerName, "'" + formData.customerTel, formData.employeeId, formData.salesperson, formData.subtotal, formData.discount, formData.grandTotal, formData.traysSent, formData.traysReceived ] 
+        : Array(12).fill(''); // <-- แก้ไขจาก 11 เป็น 12 ให้ถูกต้อง
+      
+      // ✨ [แก้ไข] ใช้ new Date() สำหรับเวลาที่อัปเดตล่าสุด
       return [...commonData, item.name, item.quantity, item.unitName, item.price, item.total, item.baseQuantity, currentUser, new Date()];
     });
+
     if (recordsToSave.length > 0) {
       salesSheet.getRange(salesSheet.getLastRow() + 1, 1, recordsToSave.length, recordsToSave[0].length).setValues(recordsToSave);
     }
     _logActivity_('✏️', `แก้ไขเอกสารขาย #${docId} ของ "${formData.customerName}" (${formData.items.length} รายการ)`);
     return { success: true, message: `อัปเดตเอกสาร ${docId} สำเร็จ` };
-  } catch (e) { console.error("updateSale Error: " + e.message); return { success: false, message: e.message };
+  } catch (e) { 
+    console.error("updateSale Error: " + e.message, e.stack); 
+    return { success: false, message: e.message };
   }
 }
 
@@ -545,25 +562,28 @@ function getSaleRecordByDocId_(sheet, docId) {
     const currentRowDocId = row[0].toString().trim();
     if (currentRowDocId === docId) {
       isCapturing = true;
-      saleData.date = row[1]; //  <-- ✨ [เพิ่ม] ดึงวันที่ขายเดิมเก็บไว้
+      saleData.date = row[1];
       saleData.customerId = row[2];
       saleData.customerName = row[3];
-      saleData.traysSent = parseInt(row[9]) || 0;
-      saleData.traysReceived = parseInt(row[10]) || 0;
+      
+      // ✨ [แก้ไข] เปลี่ยนเลขคอลัมน์ให้อ่านค่าได้ถูกต้อง
+      saleData.traysSent = parseInt(row[10]) || 0;     // อ่านจากคอลัมน์ K (แผงไข่ส่ง)
+      saleData.traysReceived = parseInt(row[11]) || 0;   // อ่านจากคอลัมน์ L (แผงไข่รับ)
+
     }
 
     if (isCapturing) {
       const productName = row[12];
       const baseQuantity = parseFloat(row[17]);
-if (productName && !isNaN(baseQuantity) && baseQuantity > 0) {
+      if (productName && !isNaN(baseQuantity) && baseQuantity > 0) {
         saleData.items.push({ name: productName, baseQuantity: baseQuantity });
-}
+      }
 
       const currentRowIndex = data.indexOf(row);
       const nextRow = data[currentRowIndex + 1];
-if (!nextRow || nextRow[0].toString().trim() !== "") {
+      if (!nextRow || nextRow[0].toString().trim() !== "") {
         break;
-}
+      }
     }
   }
   return saleData;
